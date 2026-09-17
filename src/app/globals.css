@@ -1,0 +1,91 @@
+@import "tailwindcss";
+
+:root {
+  --background: #fafafa;
+  --foreground: #09090b;
+  --primary: #18181b;
+  --secondary: #3f3f46;
+  --accent: #2563eb;
+  --muted: #e8ecf0;
+  --border: #e4e4e7;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-primary: var(--primary);
+  --color-secondary: var(--secondary);
+  --color-accent: var(--accent);
+  --color-muted: var(--muted);
+  --color-border: var(--border);
+  --font-sans: var(--font-archivo);
+  --font-display: var(--font-space-grotesk);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0a0a0c;
+    --foreground: #f4f4f5;
+    --primary: #f4f4f5;
+    --secondary: #a1a1aa;
+    --accent: #60a5fa;
+    --muted: #18181b;
+    --border: #27272a;
+  }
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans), system-ui, sans-serif;
+}
+
+@keyframes breathe-a {
+  0%,
+  100% {
+    transform: translate(-6%, -4%) scale(1);
+  }
+  50% {
+    transform: translate(4%, 6%) scale(1.12);
+  }
+}
+
+@keyframes breathe-b {
+  0%,
+  100% {
+    transform: translate(8%, 4%) scale(1.05);
+  }
+  50% {
+    transform: translate(-5%, -6%) scale(0.95);
+  }
+}
+
+@keyframes breathe-c {
+  0%,
+  100% {
+    transform: translate(0%, 6%) scale(0.98);
+  }
+  50% {
+    transform: translate(-8%, -3%) scale(1.08);
+  }
+}
+
+.blob-a {
+  animation: breathe-a 18s ease-in-out infinite;
+}
+
+.blob-b {
+  animation: breathe-b 22s ease-in-out infinite;
+}
+
+.blob-c {
+  animation: breathe-c 26s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .blob-a,
+  .blob-b,
+  .blob-c {
+    animation: none;
+  }
+}
