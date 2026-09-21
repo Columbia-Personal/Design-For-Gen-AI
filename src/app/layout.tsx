@@ -13,9 +13,8 @@ const spaceGrotesk = Space_Grotesk({
 });
 
 export const metadata: Metadata = {
-  title: "Hello, World — Ritvik Sharma",
-  description:
-    "Assignment 01 for Design for Generative AI: a hello-world app built properly and shipped to Vercel.",
+  title: "Caption lab | Ritvik Sharma",
+  description: "A Supabase-backed caption list for Design for Generative AI.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

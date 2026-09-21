@@ -1,9 +1,10 @@
 "use client";
 
 import { motion, useReducedMotion, type Variants } from "motion/react";
-import { Boxes, Palette, Wind, Triangle } from "lucide-react";
+import Link from "next/link";
+import { ArrowUpRight, Boxes, Database, Palette, Triangle } from "lucide-react";
 
-const GITHUB_URL = "#";
+const GITHUB_URL = "https://github.com/Columbia-Personal/Design-For-Gen-AI";
 
 const STACK = [
   {
@@ -17,9 +18,9 @@ const STACK = [
     note: "CSS-first theming",
   },
   {
-    icon: Wind,
-    name: "Motion for React",
-    note: "the animation you're looking at",
+    icon: Database,
+    name: "Supabase",
+    note: "captions stored in Postgres",
   },
   {
     icon: Triangle,
@@ -81,7 +82,7 @@ export default function Home() {
       <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col px-6 sm:px-12">
         <section className="flex flex-col gap-6 py-20 sm:py-28">
           <p className="font-mono text-xs uppercase tracking-widest text-accent">
-            Design for Generative AI · Assignment 01
+            Design for Generative AI · Assignments 01 + 02
           </p>
 
           <motion.h1
@@ -91,21 +92,28 @@ export default function Home() {
             className="font-display text-6xl leading-none font-medium tracking-tight text-primary sm:text-8xl"
           >
             <motion.span variants={heroWord} className="block">
-              Hello,
+              Caption
             </motion.span>
             <motion.span variants={heroWord} className="block text-accent">
-              world.
+              lab.
             </motion.span>
           </motion.h1>
 
           <p className="max-w-md text-lg leading-relaxed text-secondary">
-            The smallest program that proves the pipe works.
+            A small, public collection of captions backed by Supabase.
           </p>
 
           <p className="font-mono text-sm text-secondary/80">
-            Ritvik Sharma, pushed from a laptop, served from Vercel&apos;s edge
-            network.
+            Ritvik Sharma · Next.js, Supabase, and Vercel
           </p>
+
+          <Link
+            href="/captions"
+            className="inline-flex min-h-11 w-fit items-center gap-2 rounded-xl bg-primary px-5 py-3 text-sm font-medium text-background transition-transform duration-200 hover:-translate-y-0.5 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-accent"
+          >
+            Browse captions
+            <ArrowUpRight className="size-4" aria-hidden />
+          </Link>
         </section>
 
         <motion.section
@@ -116,21 +124,13 @@ export default function Home() {
           className="flex flex-col gap-6 border-t border-border py-16"
         >
           <motion.p variants={reveal} className="text-lg leading-relaxed text-foreground">
-            A hello world app is the standard first test when you&apos;re
-            setting up something new: build the smallest possible version,
-            run it, and confirm it works before adding anything else. This
-            one runs through more of the stack than a bare-minimum version
-            would (React, Tailwind, Motion, Next.js), but the purpose is the
-            same.
+            This project began as a deployed hello world page. It now reads a
+            set of captions from Supabase and renders them as a public list.
           </motion.p>
           <motion.p variants={reveal} className="text-lg leading-relaxed text-foreground">
-            The assignment isn&apos;t really about the words &ldquo;hello
-            world.&rdquo; It&apos;s about proving the deployment pipeline
-            works: push code to GitHub, connect it to Vercel, get a
-            successful build, and confirm the page loads for someone else in
-            a private browser window with no login required. Once that&apos;s
-            done, everything built afterward can assume deployment already
-            works.
+            The list is intentionally simple. The important part is that it
+            comes from a real database, deploys with environment variables,
+            and can be opened without an account.
           </motion.p>
         </motion.section>
 
@@ -169,7 +169,7 @@ export default function Home() {
         <span>Ritvik Sharma · Fall 2026 · Design for Generative AI</span>
         <a
           href={GITHUB_URL}
-          className="cursor-pointer underline decoration-border underline-offset-4 transition-colors hover:text-accent"
+          className="cursor-pointer underline decoration-border underline-offset-4 transition-colors hover:text-accent focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-accent"
         >
           Source
         </a>

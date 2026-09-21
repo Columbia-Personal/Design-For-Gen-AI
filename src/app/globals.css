@@ -6,6 +6,7 @@
   --primary: #18181b;
   --secondary: #3f3f46;
   --accent: #2563eb;
+  --destructive: #b91c1c;
   --muted: #e8ecf0;
   --border: #e4e4e7;
 }
@@ -16,6 +17,7 @@
   --color-primary: var(--primary);
   --color-secondary: var(--secondary);
   --color-accent: var(--accent);
+  --color-destructive: var(--destructive);
   --color-muted: var(--muted);
   --color-border: var(--border);
   --font-sans: var(--font-archivo);
@@ -29,8 +31,24 @@
     --primary: #f4f4f5;
     --secondary: #a1a1aa;
     --accent: #60a5fa;
+    --destructive: #fca5a5;
     --muted: #18181b;
     --border: #27272a;
+  }
+}
+
+.caption-card {
+  transition:
+    border-color 200ms ease,
+    box-shadow 200ms ease,
+    transform 200ms ease;
+}
+
+@media (hover: hover) {
+  .caption-card:hover {
+    border-color: color-mix(in srgb, var(--accent) 42%, var(--border));
+    box-shadow: 0 10px 20px rgb(24 24 27 / 0.08);
+    transform: translateY(-2px);
   }
 }
 
