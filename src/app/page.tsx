@@ -3,6 +3,7 @@
 import { motion, useReducedMotion, type Variants } from "motion/react";
 import Link from "next/link";
 import { ArrowUpRight, Boxes, Database, Palette, Triangle } from "lucide-react";
+import { AuthButton } from "@/components/auth-button";
 
 const GITHUB_URL = "https://github.com/Columbia-Personal/Design-For-Gen-AI";
 
@@ -64,19 +65,17 @@ export default function Home() {
 
   return (
     <div className="relative flex flex-1 flex-col overflow-hidden">
-      <header className="flex items-center justify-between px-6 py-6 sm:px-12">
+      <header className="flex items-center justify-between gap-4 px-6 py-6 sm:px-12">
         <span className="font-display text-sm tracking-tight text-secondary">
           hello.world
         </span>
-        <span className="rounded-full border border-border px-3 py-1 font-mono text-xs text-secondary">
-          01
-        </span>
+        <AuthButton />
       </header>
 
       <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col px-6 sm:px-12">
         <section className="flex flex-col gap-6 py-20 sm:py-28">
           <p className="font-mono text-xs uppercase tracking-widest text-accent">
-            Design for Generative AI · Assignments 01 + 02
+            Design for Generative AI · Assignments 01–03
           </p>
 
           <motion.h1
@@ -94,7 +93,7 @@ export default function Home() {
           </motion.h1>
 
           <p className="max-w-md text-lg leading-relaxed text-secondary">
-            A small, public collection of captions backed by Supabase.
+            A public caption collection with Supabase data and Google sign-in.
           </p>
 
           <p className="font-mono text-sm text-secondary/80">
@@ -119,12 +118,12 @@ export default function Home() {
         >
           <motion.p variants={reveal} className="text-lg leading-relaxed text-foreground">
             This project began as a deployed hello world page. It now reads a
-            set of captions from Supabase and renders them as a public list.
+            set of captions from Supabase, renders them as a public list, and
+            supports a signed-in account view.
           </motion.p>
           <motion.p variants={reveal} className="text-lg leading-relaxed text-foreground">
-            The list is intentionally simple. The important part is that it
-            comes from a real database, deploys with environment variables,
-            and can be opened without an account.
+            The list stays open to everyone. Sign in is kept separate, so the
+            public database view and the authenticated session are both easy to test.
           </motion.p>
         </motion.section>
 

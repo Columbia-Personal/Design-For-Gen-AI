@@ -2,6 +2,7 @@ import Link from "next/link";
 import { connection } from "next/server";
 import { ArrowLeft, Database, Rows3 } from "lucide-react";
 import { CaptionList, type Caption } from "./caption-list";
+import { AuthButton } from "@/components/auth-button";
 import { getSupabase } from "@/lib/supabase";
 
 export const metadata = {
@@ -31,9 +32,12 @@ export default async function CaptionsPage() {
             <ArrowLeft className="size-4" aria-hidden />
             Home
           </Link>
-          <span className="font-mono text-xs uppercase tracking-[0.16em] text-secondary">
-            Assignment 02
-          </span>
+          <div className="flex items-center gap-3">
+            <span className="hidden font-mono text-xs uppercase tracking-[0.16em] text-secondary sm:inline">
+              Assignments 02 + 03
+            </span>
+            <AuthButton />
+          </div>
         </div>
       </header>
 
