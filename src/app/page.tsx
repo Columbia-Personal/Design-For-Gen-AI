@@ -160,12 +160,26 @@ export default function Home() {
 
       <footer className="flex flex-col gap-2 border-t border-border px-6 py-8 text-xs text-secondary sm:flex-row sm:items-center sm:justify-between sm:px-12">
         <span>Ritvik Sharma · Fall 2026 · Design for Generative AI</span>
-        <a
-          href={GITHUB_URL}
-          className="cursor-pointer underline decoration-border underline-offset-4 transition-colors hover:text-accent focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-accent"
-        >
-          Source
-        </a>
+        <div className="flex items-center gap-4">
+          <Link
+            href="/privacy"
+            className="underline decoration-border underline-offset-4 transition-colors hover:text-accent focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-accent"
+          >
+            Privacy
+          </Link>
+          <Link
+            href="/terms"
+            className="underline decoration-border underline-offset-4 transition-colors hover:text-accent focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-accent"
+          >
+            Terms
+          </Link>
+          <a
+            href={GITHUB_URL}
+            className="cursor-pointer underline decoration-border underline-offset-4 transition-colors hover:text-accent focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-accent"
+          >
+            Source
+          </a>
+        </div>
       </footer>
     </div>
   );
