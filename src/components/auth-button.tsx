@@ -4,6 +4,7 @@ import type { User } from "@supabase/supabase-js";
 import { LoaderCircle, LogIn, LogOut, UserRound } from "lucide-react";
 import { motion, useReducedMotion } from "motion/react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
 import { createClient } from "@/lib/supabase/client";
 
@@ -13,6 +14,7 @@ export function AuthButton() {
   const [message, setMessage] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const shouldReduceMotion = useReducedMotion();
+  const router = useRouter();
 
   useEffect(() => {
     const supabase = createClient();
@@ -59,7 +61,10 @@ export function AuthButton() {
 
       if (error) {
         setMessage("You are still signed in. Please try again.");
+        return;
       }
+
+      router.replace("/");
     });
   }
 
