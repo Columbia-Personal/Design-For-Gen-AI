@@ -8,7 +8,11 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
 import { createClient } from "@/lib/supabase/client";
 
-export function AuthButton() {
+type AuthButtonProps = {
+  signInLabel?: string;
+};
+
+export function AuthButton({ signInLabel = "Sign in" }: AuthButtonProps) {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [message, setMessage] = useState<string | null>(null);
@@ -116,7 +120,7 @@ export function AuthButton() {
           ) : (
             <LogIn className="size-4" aria-hidden />
           )}
-          <span>{isPending ? "Opening Google" : "Sign in"}</span>
+          <span>{isPending ? "Opening Google" : signInLabel}</span>
         </motion.button>
       )}
       {message ? <span className="sr-only" role="alert">{message}</span> : null}
