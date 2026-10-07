@@ -75,7 +75,7 @@ export default function Home() {
       <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col px-6 sm:px-12">
         <section className="flex flex-col gap-6 py-20 sm:py-28">
           <p className="font-mono text-xs uppercase tracking-widest text-accent">
-            Design for Generative AI · Assignments 01–03
+            Design for Generative AI · Assignments 01–04
           </p>
 
           <motion.h1
@@ -93,7 +93,7 @@ export default function Home() {
           </motion.h1>
 
           <p className="max-w-md text-lg leading-relaxed text-secondary">
-            A public caption collection with Supabase data and Google sign-in.
+            An AI caption feed where members make a line, then decide whether it belongs.
           </p>
 
           <p className="font-mono text-sm text-secondary/80">
@@ -122,8 +122,7 @@ export default function Home() {
             supports a signed-in account view.
           </motion.p>
           <motion.p variants={reveal} className="text-lg leading-relaxed text-foreground">
-            The list stays open to everyone. Sign in is kept separate, so the
-            public database view and the authenticated session are both easy to test.
+            The list stays open to everyone. Members can generate a caption from a scene and vote on the feed; each action is tied to their signed-in account.
           </motion.p>
         </motion.section>
 

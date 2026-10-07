@@ -1,25 +1,63 @@
 import Link from "next/link";
 import { connection } from "next/server";
-import { ArrowLeft, Database, Rows3 } from "lucide-react";
+import { ArrowLeft, Database, Rows3, Sparkles } from "lucide-react";
 import { CaptionList, type Caption } from "./caption-list";
+import { CaptionGenerator } from "./caption-generator";
+import type { VoteTotal } from "./rating-controls";
 import { AuthButton } from "@/components/auth-button";
 import { getSupabase } from "@/lib/supabase";
+import { createClient } from "@/lib/supabase/server";
 
 export const metadata = {
   title: "Caption lab | Ritvik Sharma",
-  description: "A public list of captions stored in Supabase.",
+  description: "Generate and rate short captions with Supabase and Gemini.",
+};
+
+type VoteRow = {
+  caption_id: number;
+  value: -1 | 1;
+};
+
+type VoteTotalRow = VoteTotal & {
+  caption_id: number;
 };
 
 export default async function CaptionsPage() {
   await connection();
 
-  const supabase = getSupabase();
-  const { data, error } = await supabase
-    .from("captions")
-    .select("id, text")
-    .order("id", { ascending: true });
+  const publicSupabase = getSupabase();
+  const sessionSupabase = await createClient();
+  const {
+    data: { user },
+  } = await sessionSupabase.auth.getUser();
 
-  const captions = (data ?? []) as Caption[];
+  const [captionsResult, totalsResult, votesResult] = await Promise.all([
+    publicSupabase
+      .from("captions")
+      .select("id, text, prompt, author_id, generation_model, created_at")
+      .order("created_at", { ascending: false }),
+    publicSupabase.rpc("caption_vote_totals"),
+    user
+      ? sessionSupabase.from("caption_votes").select("caption_id, value")
+      : Promise.resolve({ data: [] as VoteRow[], error: null }),
+  ]);
+
+  const captions = (captionsResult.data ?? []) as Caption[];
+  const totals = (totalsResult.data ?? []) as VoteTotalRow[];
+  const votes = (votesResult.data ?? []) as VoteRow[];
+  const initialTotals = Object.fromEntries(
+    totals.map((total) => [
+      total.caption_id,
+      {
+        upvotes: Number(total.upvotes),
+        downvotes: Number(total.downvotes),
+        score: Number(total.score),
+      },
+    ]),
+  ) as Record<number, VoteTotal>;
+  const initialVotes = Object.fromEntries(
+    votes.map((vote) => [vote.caption_id, vote.value]),
+  ) as Record<number, -1 | 1>;
 
   return (
     <div className="caption-page flex min-h-screen flex-col">
@@ -34,7 +72,7 @@ export default async function CaptionsPage() {
           </Link>
           <div className="flex items-center gap-3">
             <span className="hidden font-mono text-xs uppercase tracking-[0.16em] text-secondary sm:inline">
-              Assignments 02 + 03
+              Assignments 02–04
             </span>
             <AuthButton />
           </div>
@@ -52,7 +90,7 @@ export default async function CaptionsPage() {
               Caption lab
             </h1>
             <p className="mt-5 max-w-xl text-lg leading-relaxed text-secondary">
-              A working set of short captions, loaded from the database.
+              Put a moment on the feed, get an AI caption back, and vote on the ones worth keeping.
             </p>
           </div>
           <div className="inline-flex w-fit items-center gap-3 rounded-xl border border-border bg-muted/55 px-4 py-3 text-sm text-secondary">
@@ -62,6 +100,33 @@ export default async function CaptionsPage() {
               {captions.length === 1 ? "caption" : "captions"}
             </span>
           </div>
+        </section>
+
+        <section className="py-8 sm:py-10" aria-labelledby="generation-heading">
+          {user ? (
+            <CaptionGenerator />
+          ) : (
+            <div className="flex flex-col gap-4 rounded-3xl border border-border bg-muted/40 p-5 sm:flex-row sm:items-center sm:justify-between sm:p-7">
+              <div>
+                <p className="flex items-center gap-2 font-mono text-xs uppercase tracking-[0.16em] text-accent">
+                  <Sparkles className="size-4" aria-hidden />
+                  Signed-in feature
+                </p>
+                <h2 id="generation-heading" className="mt-2 font-display text-2xl font-medium tracking-tight text-primary">
+                  Make a caption, then rate the feed.
+                </h2>
+                <p className="mt-2 max-w-xl text-sm leading-relaxed text-secondary">
+                  Browsing stays open. Sign in to generate a new caption or add your vote.
+                </p>
+              </div>
+              <Link
+                href="/"
+                className="inline-flex min-h-11 w-fit items-center justify-center rounded-xl bg-primary px-4 py-2 text-sm font-medium text-background transition-transform duration-200 hover:-translate-y-0.5 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-accent"
+              >
+                Sign in to contribute
+              </Link>
+            </div>
+          )}
         </section>
 
         <section className="py-8 sm:py-10" aria-labelledby="caption-list-heading">
@@ -75,12 +140,17 @@ export default async function CaptionsPage() {
             <span className="h-px flex-1 bg-border" aria-hidden />
           </div>
 
-          {error ? (
+          {captionsResult.error ? (
             <p className="rounded-2xl border border-destructive/30 bg-destructive/5 px-5 py-4 text-sm leading-relaxed text-secondary">
               The captions could not be loaded. Please refresh and try again.
             </p>
           ) : (
-            <CaptionList captions={captions} />
+            <CaptionList
+              captions={captions}
+              userId={user?.id ?? null}
+              initialVotes={initialVotes}
+              initialTotals={initialTotals}
+            />
           )}
         </section>
       </main>
@@ -88,7 +158,7 @@ export default async function CaptionsPage() {
       <footer className="border-t border-border px-6 py-7 sm:px-12">
         <div className="mx-auto flex w-full max-w-5xl flex-col gap-1 text-xs text-secondary sm:flex-row sm:items-center sm:justify-between">
           <span>Ritvik Sharma · Design for Generative AI</span>
-          <span>Week 2: Supabase data fetching</span>
+          <span>Week 4: generation, ratings, and RLS</span>
         </div>
       </footer>
     </div>

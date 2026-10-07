@@ -1,14 +1,22 @@
 "use client";
 
 import { motion, useReducedMotion } from "motion/react";
+import { RatingControls, type VoteTotal } from "./rating-controls";
 
 export type Caption = {
   id: number;
   text: string;
+  prompt: string | null;
+  author_id: string | null;
+  generation_model: string | null;
+  created_at: string;
 };
 
 type CaptionListProps = {
   captions: Caption[];
+  userId: string | null;
+  initialVotes: Record<number, -1 | 1>;
+  initialTotals: Record<number, VoteTotal>;
 };
 
 const listTransition = {
@@ -16,7 +24,12 @@ const listTransition = {
   ease: [0.16, 1, 0.3, 1] as const,
 };
 
-export function CaptionList({ captions }: CaptionListProps) {
+export function CaptionList({
+  captions,
+  userId,
+  initialVotes,
+  initialTotals,
+}: CaptionListProps) {
   const shouldReduceMotion = useReducedMotion();
 
   if (captions.length === 0) {
@@ -50,6 +63,29 @@ export function CaptionList({ captions }: CaptionListProps) {
           <p className="max-w-2xl self-center text-lg leading-relaxed font-medium text-foreground sm:text-xl">
             {caption.text}
           </p>
+          <div className="col-span-full ml-0 sm:col-start-2">
+            {caption.prompt ? (
+              <details className="group/prompt mt-1 text-sm text-secondary">
+                <summary className="w-fit cursor-pointer list-none rounded-md font-mono text-xs uppercase tracking-[0.13em] text-secondary transition-colors duration-200 hover:text-accent focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-accent">
+                  <span className="group-open/prompt:hidden">Show prompt</span>
+                  <span className="hidden group-open/prompt:inline">Hide prompt</span>
+                </summary>
+                <p className="mt-2 max-w-2xl rounded-xl bg-muted/60 px-3 py-2 leading-relaxed">
+                  {caption.prompt}
+                </p>
+              </details>
+            ) : (
+              <p className="mt-1 font-mono text-xs uppercase tracking-[0.13em] text-secondary">
+                Seed caption
+              </p>
+            )}
+            <RatingControls
+              captionId={caption.id}
+              userId={userId}
+              initialVote={initialVotes[caption.id] ?? null}
+              initialTotals={initialTotals[caption.id] ?? { upvotes: 0, downvotes: 0, score: 0 }}
+            />
+          </div>
         </motion.li>
       ))}
     </ol>
