@@ -12,7 +12,9 @@ import {
   Sparkles,
 } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import Image from "next/image";
 import { useMemo, useRef, useState } from "react";
+import { getSceneMedia, SCENE_MEDIA } from "@/lib/scene-media";
 import { RatingControls, type VoteTotal } from "./rating-controls";
 
 gsap.registerPlugin(ScrollTrigger);
@@ -23,6 +25,8 @@ export type Caption = {
   prompt: string | null;
   author_id: string | null;
   generation_model: string | null;
+  media_key: string | null;
+  media_url: string | null;
   created_at: string;
 };
 
@@ -349,6 +353,8 @@ export function CaptionList({
               <AnimatePresence initial={false} mode="popLayout">
                 {visibleCaptions.map((caption, index) => {
                   const position = filteredCaptions.findIndex((item) => item.id === caption.id) + 1;
+                  const scene = getSceneMedia(caption.media_key) ?? SCENE_MEDIA[caption.id % SCENE_MEDIA.length];
+                  const imageUrl = caption.media_url ?? scene.imageUrl;
                   return (
                     <motion.li
                       layout="position"
@@ -359,7 +365,7 @@ export function CaptionList({
                       exit={shouldReduceMotion ? undefined : { opacity: 0, y: -10 }}
                       transition={{ duration: 0.24, ease: [0.16, 1, 0.3, 1] }}
                       style={{ zIndex: visibleCaptions.length - index }}
-                      className={`caption-card relative grid min-h-40 grid-cols-[auto_1fr] gap-4 overflow-hidden rounded-[1.75rem] border border-border bg-background p-5 shadow-sm sm:p-7 ${index > 0 ? "lg:-mt-2" : ""}`}
+                      className={`caption-card relative grid min-h-40 grid-cols-[auto_1fr] gap-4 overflow-hidden rounded-[1.75rem] border border-border bg-background p-5 shadow-sm sm:grid-cols-[auto_minmax(10rem,13rem)_minmax(0,1fr)] sm:p-7 ${index > 0 ? "lg:-mt-2" : ""}`}
                     >
                       <span
                         aria-hidden
@@ -367,7 +373,20 @@ export function CaptionList({
                       >
                         {String(position).padStart(2, "0")}
                       </span>
-                      <div>
+                      <div className="col-span-full sm:col-span-1 sm:col-start-2">
+                        <div className="group relative aspect-[4/3] overflow-hidden rounded-2xl border border-border bg-muted">
+                          <Image
+                            src={imageUrl}
+                            alt={scene.alt}
+                            fill
+                            sizes="(min-width: 640px) 13rem, calc(100vw - 5rem)"
+                            className="object-cover transition-transform duration-700 ease-out group-hover:scale-105 motion-reduce:transition-none"
+                          />
+                          <div className="absolute inset-0 bg-gradient-to-t from-primary/85 via-primary/5 to-transparent" />
+                          <span className="absolute bottom-3 left-3 right-3 text-sm font-medium text-background">{scene.title}</span>
+                        </div>
+                      </div>
+                      <div className="col-span-full sm:col-start-3">
                         <p className="max-w-2xl font-editorial text-2xl leading-snug tracking-tight text-foreground sm:text-3xl">
                           {caption.text}
                         </p>

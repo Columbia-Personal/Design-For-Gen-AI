@@ -34,7 +34,7 @@ export default async function CaptionsPage() {
   const [captionsResult, totalsResult, votesResult] = await Promise.all([
     publicSupabase
       .from("captions")
-      .select("id, text, prompt, author_id, generation_model, created_at")
+      .select("id, text, prompt, author_id, generation_model, media_key, media_url, created_at")
       .order("created_at", { ascending: false }),
     publicSupabase.rpc("caption_vote_totals"),
     user

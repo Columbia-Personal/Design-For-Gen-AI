@@ -2,21 +2,18 @@
 
 import { LoaderCircle, Sparkles, WandSparkles } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
+import { SCENE_MEDIA } from "@/lib/scene-media";
 
 const MAX_PROMPT_LENGTH = 280;
-
-const sceneStarters = [
-  "The 1 train pauses at 125th and everyone becomes a train engineer.",
-  "My roommate carries a tote bag full of free campus merch like it is survival gear.",
-  "A Saturday walk in SoHo turns into a three-hour search for the one coffee shop with seats.",
-];
 
 export function CaptionGenerator() {
   const router = useRouter();
   const shouldReduceMotion = useReducedMotion();
   const [prompt, setPrompt] = useState("");
+  const [mediaKey, setMediaKey] = useState(SCENE_MEDIA[0].key);
   const [message, setMessage] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
@@ -35,7 +32,7 @@ export function CaptionGenerator() {
       const response = await fetch("/api/generate-caption", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt: cleanPrompt }),
+        body: JSON.stringify({ prompt: cleanPrompt, mediaKey }),
       });
       const result = (await response.json().catch(() => null)) as { error?: string } | null;
 
@@ -71,18 +68,38 @@ export function CaptionGenerator() {
         Describe a small NYC moment. Caption Lab writes one dry line, then keeps the prompt with it so people can see where it came from.
       </p>
 
-      <div className="relative mt-5 flex flex-wrap gap-2" aria-label="Scene ideas">
-        {sceneStarters.map((starter) => (
-          <button
-            key={starter}
-            type="button"
-            onClick={() => setPrompt(starter)}
-            className="min-h-11 cursor-pointer rounded-full border border-border bg-background/80 px-3 py-2 text-left text-xs leading-snug text-secondary transition-colors duration-200 hover:border-accent/50 hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-accent"
-          >
-            {starter}
-          </button>
-        ))}
-      </div>
+      <fieldset className="relative mt-6">
+        <legend className="text-sm font-medium text-foreground">Pick the visual</legend>
+        <p className="mt-1 text-sm text-secondary">It stays with the caption when it reaches the feed.</p>
+        <div className="mt-3 grid grid-cols-2 gap-3 lg:grid-cols-4">
+          {SCENE_MEDIA.map((scene) => {
+            const isSelected = scene.key === mediaKey;
+            return (
+              <motion.button
+                key={scene.key}
+                type="button"
+                aria-pressed={isSelected}
+                onClick={() => {
+                  setMediaKey(scene.key);
+                  if (!prompt.trim()) setPrompt(scene.promptSeed);
+                }}
+                whileTap={shouldReduceMotion ? undefined : { scale: 0.98 }}
+                className={`group relative aspect-[4/3] min-h-28 cursor-pointer overflow-hidden rounded-2xl border text-left focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-accent ${isSelected ? "border-accent ring-2 ring-accent/30" : "border-border hover:border-accent/60"}`}
+              >
+                <Image
+                  src={scene.imageUrl}
+                  alt={scene.alt}
+                  fill
+                  sizes="(min-width: 1024px) 11rem, 44vw"
+                  className="object-cover transition-transform duration-700 ease-out group-hover:scale-105 motion-reduce:transition-none"
+                />
+                <div className={`absolute inset-0 bg-gradient-to-t from-primary/90 via-primary/10 to-transparent transition-opacity duration-300 ${isSelected ? "opacity-100" : "opacity-80 group-hover:opacity-100"}`} />
+                <span className="absolute bottom-3 left-3 right-3 text-sm font-medium leading-tight text-background">{scene.title}</span>
+              </motion.button>
+            );
+          })}
+        </div>
+      </fieldset>
 
       <form className="relative mt-5 grid gap-3" onSubmit={generateCaption}>
         <label className="grid gap-2 text-sm font-medium text-foreground" htmlFor="caption-prompt">

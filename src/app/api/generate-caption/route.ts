@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { getSceneMedia } from "@/lib/scene-media";
 import { createClient } from "@/lib/supabase/server";
 
 const MAX_PROMPT_LENGTH = 280;
@@ -31,12 +32,24 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Sign in before generating a caption." }, { status: 401 });
   }
 
-  const body = (await request.json().catch(() => null)) as { prompt?: unknown } | null;
+  const body = (await request.json().catch(() => null)) as {
+    prompt?: unknown;
+    mediaKey?: unknown;
+  } | null;
   const prompt = typeof body?.prompt === "string" ? body.prompt.trim() : "";
+  const mediaKey = typeof body?.mediaKey === "string" ? body.mediaKey : "";
+  const selectedMedia = getSceneMedia(mediaKey);
 
   if (!prompt || prompt.length > MAX_PROMPT_LENGTH) {
     return NextResponse.json(
       { error: `Describe the scene in 1–${MAX_PROMPT_LENGTH} characters.` },
+      { status: 400 },
+    );
+  }
+
+  if (!selectedMedia) {
+    return NextResponse.json(
+      { error: "Choose a visual before generating a caption." },
       { status: 400 },
     );
   }
@@ -102,8 +115,10 @@ export async function POST(request: Request) {
         prompt,
         author_id: user.id,
         generation_model: GEMINI_MODEL,
+        media_key: selectedMedia.key,
+        media_url: selectedMedia.imageUrl,
       })
-      .select("id, text, prompt, author_id, generation_model, created_at")
+      .select("id, text, prompt, author_id, generation_model, media_key, media_url, created_at")
       .single();
 
     if (error || !caption) {
