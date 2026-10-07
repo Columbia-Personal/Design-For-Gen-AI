@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Archivo, Space_Grotesk } from "next/font/google";
+import { Archivo, Outfit, Space_Grotesk } from "next/font/google";
 import "./globals.css";
 
 const archivo = Archivo({
@@ -12,6 +12,11 @@ const spaceGrotesk = Space_Grotesk({
   subsets: ["latin"],
 });
 
+const outfit = Outfit({
+  variable: "--font-outfit",
+  subsets: ["latin"],
+});
+
 export const metadata: Metadata = {
   title: "Caption lab | Ritvik Sharma",
   description: "A Supabase-backed caption list for Design for Generative AI.",
@@ -21,7 +26,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html
       lang="en"
-      className={`${archivo.variable} ${spaceGrotesk.variable} h-full antialiased`}
+      className={`${archivo.variable} ${spaceGrotesk.variable} ${outfit.variable} h-full antialiased`}
     >
       <body className="min-h-full bg-background text-foreground">
         <div
