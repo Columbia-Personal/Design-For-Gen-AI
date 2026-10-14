@@ -7,13 +7,17 @@ import {
   ArrowLeft,
   ArrowRight,
   ChevronDown,
+  FileClock,
   ListFilter,
+  LoaderCircle,
   Route,
   Sparkles,
+  UploadCloud,
 } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import Image from "next/image";
 import { useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { getSceneMedia, SCENE_MEDIA } from "@/lib/scene-media";
 import { RatingControls, type VoteTotal } from "./rating-controls";
 import type { DailyDetour } from "./caption-generator";
@@ -33,12 +37,24 @@ export type Caption = {
   created_at: string;
 };
 
+export type CaptionDraft = {
+  id: string;
+  text: string;
+  prompt: string | null;
+  media_source: "upload" | "starter-gif";
+  media_url: string | null;
+  media_alt: string;
+  challenge_id: number | null;
+  created_at: string;
+};
+
 type CaptionListProps = {
   captions: Caption[];
   userId: string | null;
   initialVotes: Record<number, -1 | 1>;
   initialTotals: Record<number, VoteTotal>;
   dailyDetour: DailyDetour | null;
+  drafts: CaptionDraft[];
 };
 
 type SortMode = "fresh" | "loved";
@@ -97,17 +113,87 @@ function CaptionPrompt({ prompt }: { prompt: string }) {
   );
 }
 
+function DraftCard({ draft, onPublished }: { draft: CaptionDraft; onPublished: () => void }) {
+  const router = useRouter();
+  const [isPublishing, setIsPublishing] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+
+  async function publishDraft() {
+    setIsPublishing(true);
+    setMessage(null);
+    const response = await fetch("/api/publish-draft", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ draftId: draft.id }),
+    });
+    const result = (await response.json().catch(() => null)) as { error?: string } | null;
+    if (!response.ok) {
+      setMessage(result?.error ?? "This draft could not be published. Try again.");
+      setIsPublishing(false);
+      return;
+    }
+    setMessage("Published to the feed.");
+    onPublished();
+    router.refresh();
+  }
+
+  return (
+    <motion.li
+      layout="position"
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -10 }}
+      transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+      className="relative overflow-hidden rounded-[1.75rem] border border-dashed border-accent/50 bg-accent/[0.035] shadow-sm"
+    >
+      {draft.media_url ? (
+        <div className="relative aspect-[4/3] overflow-hidden bg-muted">
+          <Image
+            src={draft.media_url}
+            alt={draft.media_alt}
+            fill
+            sizes="(min-width: 1024px) 42rem, (min-width: 640px) 70vw, calc(100vw - 3rem)"
+            className="object-cover"
+          />
+          <span className="absolute left-4 top-4 inline-flex items-center gap-2 rounded-full bg-primary/90 px-3 py-1.5 text-xs font-medium text-background backdrop-blur">
+            <FileClock className="size-3.5" aria-hidden /> Private draft
+          </span>
+        </div>
+      ) : null}
+      <div className="p-5 sm:p-7">
+        <p className="max-w-2xl font-editorial text-2xl leading-snug tracking-tight text-foreground sm:text-3xl">{draft.text}</p>
+        {draft.prompt ? <CaptionPrompt prompt={draft.prompt} /> : <p className="mt-4 text-sm text-secondary">No extra context was added.</p>}
+        <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-border/80 pt-4">
+          <p className="text-sm text-secondary">Only you can see this until you publish it.</p>
+          <button
+            type="button"
+            onClick={publishDraft}
+            disabled={isPublishing}
+            className="inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-xl bg-primary px-4 text-sm font-medium text-background transition-transform duration-200 hover:-translate-y-0.5 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {isPublishing ? <LoaderCircle className="size-4 animate-spin motion-reduce:animate-none" aria-hidden /> : <UploadCloud className="size-4" aria-hidden />}
+            Publish draft
+          </button>
+        </div>
+        {message ? <p className="mt-3 text-sm text-secondary" role="status">{message}</p> : null}
+      </div>
+    </motion.li>
+  );
+}
+
 export function CaptionList({
   captions,
   userId,
   initialVotes,
   initialTotals,
   dailyDetour,
+  drafts,
 }: CaptionListProps) {
   const shouldReduceMotion = useReducedMotion();
   const scope = useRef<HTMLDivElement>(null);
   const [sort, setSort] = useState<SortMode>("fresh");
   const [filter, setFilter] = useState<FilterMode>("all");
+  const [myCaptionView, setMyCaptionView] = useState<"published" | "drafts">("published");
   const [visibleCount, setVisibleCount] = useState(6);
   const [spotlightIndex, setSpotlightIndex] = useState(0);
   const [voteTotals, setVoteTotals] = useState(initialTotals);
@@ -211,7 +297,7 @@ export function CaptionList({
     },
   );
 
-  if (captions.length === 0) {
+  if (captions.length === 0 && drafts.length === 0) {
     return (
       <p className="rounded-2xl border border-border bg-background px-5 py-8 text-secondary">
         There are no captions here yet. Sign in and make the first one.
@@ -347,7 +433,40 @@ export function CaptionList({
         </aside>
 
         <div data-feed-stream>
-          {visibleCaptions.length ? (
+          {filter === "mine" ? (
+            <div className="mb-5 flex w-full rounded-2xl border border-border bg-muted/50 p-1" role="tablist" aria-label="My captions">
+              {(["published", "drafts"] as const).map((view) => {
+                const isActive = myCaptionView === view;
+                return (
+                  <button
+                    key={view}
+                    type="button"
+                    role="tab"
+                    aria-selected={isActive}
+                    onClick={() => setMyCaptionView(view)}
+                    className={`relative min-h-11 flex-1 cursor-pointer rounded-xl px-3 text-sm font-medium transition-colors duration-200 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-accent ${isActive ? "bg-background text-foreground shadow-sm" : "text-secondary hover:text-foreground"}`}
+                  >
+                    {view === "published" ? "Published" : `Drafts (${drafts.length})`}
+                  </button>
+                );
+              })}
+            </div>
+          ) : null}
+
+          {filter === "mine" && myCaptionView === "drafts" ? (
+            drafts.length ? (
+              <ol className="grid gap-3" aria-label="Private caption drafts">
+                <AnimatePresence initial={false} mode="popLayout">
+                  {drafts.map((draft) => <DraftCard key={draft.id} draft={draft} onPublished={() => setMyCaptionView("published")} />)}
+                </AnimatePresence>
+              </ol>
+            ) : (
+              <div className="rounded-[1.75rem] border border-border bg-background p-6">
+                <p className="font-editorial text-2xl font-medium tracking-tight text-primary">No saved drafts yet.</p>
+                <p className="mt-2 text-sm leading-relaxed text-secondary">Generate a caption from an upload or starter GIF and it will stay here until you publish it.</p>
+              </div>
+            )
+          ) : visibleCaptions.length ? (
             <ol className="grid gap-3" aria-label="Caption list">
               <AnimatePresence initial={false} mode="popLayout">
                 {visibleCaptions.map((caption, index) => {
@@ -380,7 +499,7 @@ export function CaptionList({
                           />
                         </div>
                         <div className="absolute inset-0 bg-gradient-to-t from-primary/65 via-transparent to-transparent" />
-                        <span className="absolute bottom-4 left-5 right-5 text-sm font-medium text-background">{caption.media_key === "user-upload" ? "Member upload" : scene.title}</span>
+                        <span className="absolute bottom-4 left-5 right-5 text-sm font-medium text-background">{caption.media_key === "user-upload" ? "Member upload" : caption.media_key === "reaction-gif" ? "Starter reaction GIF" : scene.title}</span>
                       </div>
                       <div className="p-5 sm:p-7">
                         <p className="max-w-2xl font-editorial text-2xl leading-snug tracking-tight text-foreground sm:text-3xl">

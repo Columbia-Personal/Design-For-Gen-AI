@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { connection } from "next/server";
 import { ArrowLeft, ArrowDownRight, Sparkles } from "lucide-react";
-import { CaptionList, type Caption } from "./caption-list";
+import { CaptionList, type Caption, type CaptionDraft } from "./caption-list";
 import { CaptionGenerator } from "./caption-generator";
 import type { DailyDetour } from "./caption-generator";
 import type { VoteTotal } from "./rating-controls";
@@ -25,6 +25,11 @@ type VoteTotalRow = VoteTotal & {
 
 type DailyDetourRow = DailyDetour & { active_on: string };
 
+type DraftRow = Omit<CaptionDraft, "media_url"> & {
+  media_url: string | null;
+  media_path: string | null;
+};
+
 export default async function CaptionsPage() {
   await connection();
 
@@ -34,7 +39,7 @@ export default async function CaptionsPage() {
     data: { user },
   } = await sessionSupabase.auth.getUser();
 
-  const [captionsResult, totalsResult, votesResult, dailyDetourResult] = await Promise.all([
+  const [captionsResult, totalsResult, votesResult, dailyDetourResult, draftsResult] = await Promise.all([
     publicSupabase
       .from("captions")
       .select("id, text, prompt, author_id, generation_model, media_key, media_url, media_alt, challenge_id, created_at")
@@ -49,12 +54,48 @@ export default async function CaptionsPage() {
       .order("active_on", { ascending: false })
       .limit(1)
       .maybeSingle(),
+    user
+      ? sessionSupabase
+        .from("caption_drafts")
+        .select("id, text, prompt, media_source, media_url, media_path, media_alt, challenge_id, created_at")
+        .order("created_at", { ascending: false })
+      : Promise.resolve({ data: [] as DraftRow[], error: null }),
   ]);
 
   const captions = (captionsResult.data ?? []) as Caption[];
   const totals = (totalsResult.data ?? []) as VoteTotalRow[];
   const votes = (votesResult.data ?? []) as VoteRow[];
   const dailyDetour = (dailyDetourResult.data ?? null) as DailyDetourRow | null;
+  const draftRows = (draftsResult.data ?? []) as DraftRow[];
+  const drafts = await Promise.all(
+    draftRows.map(async (draft) => {
+      if (!draft.media_path) {
+        return {
+          id: draft.id,
+          text: draft.text,
+          prompt: draft.prompt,
+          media_source: draft.media_source,
+          media_url: draft.media_url,
+          media_alt: draft.media_alt,
+          challenge_id: draft.challenge_id,
+          created_at: draft.created_at,
+        } as CaptionDraft;
+      }
+      const { data: signedMedia } = await sessionSupabase.storage
+        .from("caption-drafts")
+        .createSignedUrl(draft.media_path, 60 * 60);
+      return {
+        id: draft.id,
+        text: draft.text,
+        prompt: draft.prompt,
+        media_source: draft.media_source,
+        media_url: signedMedia?.signedUrl ?? null,
+        media_alt: draft.media_alt,
+        challenge_id: draft.challenge_id,
+        created_at: draft.created_at,
+      } as CaptionDraft;
+    }),
+  );
   const initialTotals = Object.fromEntries(
     totals.map((total) => [
       total.caption_id,
@@ -127,6 +168,7 @@ export default async function CaptionsPage() {
               initialVotes={initialVotes}
               initialTotals={initialTotals}
               dailyDetour={dailyDetour}
+              drafts={drafts}
             />
           )}
         </section>

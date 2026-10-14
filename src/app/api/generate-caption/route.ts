@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { getStarterGif } from "@/lib/starter-gifs";
 import { createClient } from "@/lib/supabase/server";
 
 const MAX_PROMPT_LENGTH = 280;
@@ -27,10 +28,11 @@ export async function POST(request: Request) {
   if (!formData) return NextResponse.json({ error: "The image could not be read. Try selecting it again." }, { status: 400 });
 
   const image = formData.get("image");
+  const starterGif = getStarterGif(getString(formData, "starterGifId"));
   const prompt = getString(formData, "prompt");
   const detour = getString(formData, "detour");
-  if (!(image instanceof File)) return NextResponse.json({ error: "Add a JPG, PNG, or WebP image first." }, { status: 400 });
-  if (!ACCEPTED_IMAGE_TYPES.has(image.type) || image.size > MAX_IMAGE_BYTES) {
+  if (!(image instanceof File) && !starterGif) return NextResponse.json({ error: "Choose a starter GIF or add a JPG, PNG, or WebP image first." }, { status: 400 });
+  if (image instanceof File && (!ACCEPTED_IMAGE_TYPES.has(image.type) || image.size > MAX_IMAGE_BYTES)) {
     return NextResponse.json({ error: "Use a JPG, PNG, or WebP image that is 4 MB or smaller." }, { status: 400 });
   }
   if (prompt.length > MAX_PROMPT_LENGTH) {
@@ -41,11 +43,14 @@ export async function POST(request: Request) {
   if (!apiKey) return NextResponse.json({ error: "Caption generation is not configured yet. Add GEMINI_API_KEY and try again." }, { status: 503 });
 
   try {
-    const imageData = Buffer.from(await image.arrayBuffer()).toString("base64");
+    const imageData = image instanceof File ? Buffer.from(await image.arrayBuffer()).toString("base64") : null;
     const requiredContext = [
       detour ? `Daily prompt that the caption must answer: ${detour}` : "",
       prompt ? `Uploader detail that the caption must explicitly use: ${prompt}` : "",
     ].filter(Boolean).join("\n");
+    const mediaInstruction = starterGif
+      ? `The post uses this reaction GIF: ${starterGif.description} Use that setup in the caption.`
+      : "Use specific visual details from the image.";
     const response = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`,
       {
@@ -59,6 +64,7 @@ export async function POST(request: Request) {
                 "Look at this image and write exactly one original caption for a student-run New York humor feed.",
                 "Keep it under 180 characters. Make it dry, specific, and casually online.",
                 "Return only the caption: no hashtags, quotation marks, setup, or explanation.",
+                mediaInstruction,
                 requiredContext
                   ? [
                     "The source context below is a hard requirement, not optional inspiration.",
@@ -68,9 +74,9 @@ export async function POST(request: Request) {
                     requiredContext,
                     "--- END SOURCE CONTEXT ---",
                   ].join("\n")
-                  : "Use specific visual details from the image.",
+                  : "",
               ].join("\n") },
-              { inlineData: { mimeType: image.type, data: imageData } },
+              ...(image instanceof File && imageData ? [{ inlineData: { mimeType: image.type, data: imageData } }] : []),
             ],
           }],
           generationConfig: { maxOutputTokens: 100 },

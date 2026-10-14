@@ -4,15 +4,17 @@ import { Check, ImagePlus, LoaderCircle, Sparkles, UploadCloud, WandSparkles, X 
 import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { getStarterGif, STARTER_GIFS } from "@/lib/starter-gifs";
 
 const MAX_PROMPT_LENGTH = 280;
 const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
 
 export type DailyDetour = { id: number; title: string; prompt: string };
 
-type JobState = "idle" | "generating" | "ready" | "publishing";
+type JobState = "idle" | "generating" | "saving" | "ready" | "publishing";
 
 type Draft = {
+  id: string;
   caption: string;
   generationModel: string;
 };
@@ -30,6 +32,7 @@ export function CaptionGenerator({ dailyDetour }: CaptionGeneratorProps) {
   const previewUrlRef = useRef<string | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [starterGifId, setStarterGifId] = useState<string | null>(null);
   const [prompt, setPrompt] = useState("");
   const [useDetour, setUseDetour] = useState(false);
   const [draft, setDraft] = useState<Draft | null>(null);
@@ -54,6 +57,7 @@ export function CaptionGenerator({ dailyDetour }: CaptionGeneratorProps) {
     previewUrlRef.current = nextPreviewUrl;
     setPreviewUrl(nextPreviewUrl);
     setFile(nextFile);
+    setStarterGifId(null);
     setMessage(null);
   }
 
@@ -62,7 +66,18 @@ export function CaptionGenerator({ dailyDetour }: CaptionGeneratorProps) {
     previewUrlRef.current = null;
     setFile(null);
     setPreviewUrl(null);
+    setStarterGifId(null);
     if (inputRef.current) inputRef.current.value = "";
+  }
+
+  function chooseStarterGif(id: string) {
+    if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
+    previewUrlRef.current = null;
+    setPreviewUrl(null);
+    setFile(null);
+    if (inputRef.current) inputRef.current.value = "";
+    setStarterGifId((current) => current === id ? null : id);
+    setMessage(null);
   }
 
   function resetDraft() {
@@ -75,10 +90,23 @@ export function CaptionGenerator({ dailyDetour }: CaptionGeneratorProps) {
     setMessage(null);
   }
 
+  function discardDraft() {
+    const draftId = draft?.id;
+    resetDraft();
+    if (draftId) {
+      void fetch("/api/delete-draft", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ draftId }),
+      }).then(() => router.refresh());
+    }
+  }
+
   function generateCaption(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!file) {
-      setMessage("Add an image before asking for a caption.");
+    const starterGif = getStarterGif(starterGifId);
+    if (!file && !starterGif) {
+      setMessage("Choose a starter GIF or add an image before asking for a caption.");
       return;
     }
 
@@ -89,7 +117,8 @@ export function CaptionGenerator({ dailyDetour }: CaptionGeneratorProps) {
 
     void (async () => {
       const formData = new FormData();
-      formData.set("image", file);
+      if (file) formData.set("image", file);
+      if (starterGif) formData.set("starterGifId", starterGif.id);
       formData.set("prompt", prompt.trim());
       if (useDetour && dailyDetour) formData.set("detour", dailyDetour.prompt);
 
@@ -100,25 +129,37 @@ export function CaptionGenerator({ dailyDetour }: CaptionGeneratorProps) {
         setMessage(result?.error ?? "Caption generation did not finish. Try again.");
         return;
       }
-      setDraft({ caption: result.caption, generationModel: result.generationModel ?? "Gemini" });
+      setJobState("saving");
+      const saveFormData = new FormData();
+      if (file) saveFormData.set("image", file);
+      if (starterGif) saveFormData.set("starterGifId", starterGif.id);
+      saveFormData.set("caption", result.caption);
+      saveFormData.set("prompt", prompt.trim());
+      if (useDetour && dailyDetour) saveFormData.set("challengeId", String(dailyDetour.id));
+
+      const saveResponse = await fetch("/api/save-draft", { method: "POST", body: saveFormData });
+      const saved = (await saveResponse.json().catch(() => null)) as { draft?: { id?: string }; error?: string } | null;
+      if (!saveResponse.ok || !saved?.draft?.id) {
+        setJobState("idle");
+        setMessage(saved?.error ?? "Your caption was generated, but the draft could not be saved. Try again.");
+        return;
+      }
+      setDraft({ id: saved.draft.id, caption: result.caption, generationModel: result.generationModel ?? "Gemini" });
       setJobState("ready");
     })();
   }
 
   function publishCaption() {
-    if (!file || !draft) return;
+    if (!draft) return;
     setMessage(null);
     setJobState("publishing");
 
     void (async () => {
-      const formData = new FormData();
-      formData.set("image", file);
-      formData.set("caption", draft.caption);
-      formData.set("prompt", prompt.trim());
-      formData.set("mediaAlt", prompt.trim() || "Image uploaded for a Caption Lab post.");
-      if (useDetour && dailyDetour) formData.set("challengeId", String(dailyDetour.id));
-
-      const response = await fetch("/api/publish-caption", { method: "POST", body: formData });
+      const response = await fetch("/api/publish-draft", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ draftId: draft.id }),
+      });
       const result = (await response.json().catch(() => null)) as { error?: string } | null;
       if (!response.ok) {
         setJobState("ready");
@@ -131,7 +172,9 @@ export function CaptionGenerator({ dailyDetour }: CaptionGeneratorProps) {
     })();
   }
 
-  const isWorking = jobState === "generating" || jobState === "publishing";
+  const selectedStarterGif = getStarterGif(starterGifId);
+  const selectedMediaUrl = previewUrl ?? selectedStarterGif?.url ?? null;
+  const isWorking = jobState === "generating" || jobState === "saving" || jobState === "publishing";
 
   return (
     <LayoutGroup>
@@ -159,6 +202,32 @@ export function CaptionGenerator({ dailyDetour }: CaptionGeneratorProps) {
 
             <form className="relative mt-7 grid gap-5" onSubmit={generateCaption}>
               <div>
+                <p className="text-sm font-medium text-foreground">Start with a reaction</p>
+                <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4" aria-label="Popular reaction GIFs">
+                  {STARTER_GIFS.map((gif) => {
+                    const isSelected = starterGifId === gif.id;
+                    return (
+                      <motion.button
+                        key={gif.id}
+                        type="button"
+                        aria-pressed={isSelected}
+                        onClick={() => chooseStarterGif(gif.id)}
+                        whileTap={shouldReduceMotion ? undefined : { scale: 0.97 }}
+                        className={`group relative aspect-square cursor-pointer overflow-hidden rounded-2xl border text-left transition-colors duration-200 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-accent ${isSelected ? "border-accent ring-2 ring-accent/30" : "border-border hover:border-accent/60"}`}
+                      >
+                        {/* GIPHY-hosted reaction GIF chosen by the creator. */}
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={gif.url} alt={gif.alt} className="size-full object-cover transition-transform duration-500 group-hover:scale-105 motion-reduce:transition-none" />
+                        <span className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-primary/85 to-transparent px-2 pb-2 pt-7 text-xs font-medium text-background">{gif.title}</span>
+                        {isSelected ? <span className="absolute right-2 top-2 inline-flex size-6 items-center justify-center rounded-full bg-accent text-background"><Check className="size-3.5" aria-hidden /></span> : null}
+                      </motion.button>
+                    );
+                  })}
+                </div>
+                <p className="mt-3 text-xs leading-relaxed text-secondary">Selected reaction GIFs are provided by GIPHY. Or upload your own image below.</p>
+              </div>
+
+              <div>
                 <label htmlFor="caption-image" className="text-sm font-medium text-foreground">Your image</label>
                 <input
                   ref={inputRef}
@@ -168,13 +237,13 @@ export function CaptionGenerator({ dailyDetour }: CaptionGeneratorProps) {
                   onChange={(event) => chooseFile(event.target.files?.[0] ?? null)}
                   className="sr-only"
                 />
-                {previewUrl ? (
+                {selectedMediaUrl ? (
                   <motion.div layoutId="caption-upload-preview" className="mt-3 overflow-hidden rounded-2xl border border-border bg-muted sm:max-w-md">
                     {/* A browser object URL cannot be optimized by next/image. */}
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={previewUrl} alt="Selected upload preview" className="aspect-[4/3] w-full object-cover" />
+                    <img src={selectedMediaUrl} alt={selectedStarterGif?.alt ?? "Selected upload preview"} className="aspect-[4/3] w-full object-cover" />
                     <div className="flex items-center justify-between gap-3 p-3">
-                      <p className="truncate text-sm text-secondary">{file?.name}</p>
+                      <p className="truncate text-sm text-secondary">{selectedStarterGif?.title ?? file?.name}</p>
                       <button type="button" onClick={clearFile} className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-xl text-secondary transition-colors hover:bg-background hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-accent" aria-label="Remove selected image"><X className="size-4" aria-hidden /></button>
                     </div>
                   </motion.div>
@@ -215,7 +284,7 @@ export function CaptionGenerator({ dailyDetour }: CaptionGeneratorProps) {
 
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <p className="min-h-5 text-sm text-secondary" aria-live="polite">{message}</p>
-                <motion.button type="submit" disabled={!file || isWorking} whileTap={shouldReduceMotion ? undefined : { scale: 0.97 }} className="inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-medium text-background transition-transform duration-200 hover:-translate-y-0.5 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-60">
+                <motion.button type="submit" disabled={!selectedMediaUrl || isWorking} whileTap={shouldReduceMotion ? undefined : { scale: 0.97 }} className="inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-medium text-background transition-transform duration-200 hover:-translate-y-0.5 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-60">
                   <Sparkles className="size-4" aria-hidden /> Generate a draft
                 </motion.button>
               </div>
@@ -225,7 +294,7 @@ export function CaptionGenerator({ dailyDetour }: CaptionGeneratorProps) {
       </AnimatePresence>
 
       <AnimatePresence initial={false}>
-        {jobState !== "idle" && previewUrl ? (
+        {jobState !== "idle" && selectedMediaUrl ? (
           <motion.aside
             key="caption-job"
             initial={shouldReduceMotion ? false : { opacity: 0, y: 52, scale: 0.9 }}
@@ -238,14 +307,14 @@ export function CaptionGenerator({ dailyDetour }: CaptionGeneratorProps) {
             <div className="flex gap-3 p-3">
               <motion.div layoutId="caption-upload-preview" className="size-20 shrink-0 overflow-hidden rounded-xl bg-muted">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={previewUrl} alt="Selected upload" className="size-full object-cover" />
+                <img src={selectedMediaUrl} alt={selectedStarterGif?.alt ?? "Selected upload"} className="size-full object-cover" />
               </motion.div>
               <div className="min-w-0 flex-1 py-1">
-                {jobState === "generating" || jobState === "publishing" ? <LoaderCircle className="size-5 animate-spin text-accent motion-reduce:animate-none" aria-hidden /> : <Check className="size-5 text-emerald-600" aria-hidden />}
-                <p className="mt-2 text-sm font-medium text-foreground">{jobState === "generating" ? "Your caption is being generated" : jobState === "publishing" ? "Publishing your post" : "Caption ready to review"}</p>
-                <p className="mt-1 text-xs leading-relaxed text-secondary">{jobState === "ready" ? "Nothing is public until you publish it." : "You can keep browsing while this finishes."}</p>
+                {jobState === "generating" || jobState === "saving" || jobState === "publishing" ? <LoaderCircle className="size-5 animate-spin text-accent motion-reduce:animate-none" aria-hidden /> : <Check className="size-5 text-emerald-600" aria-hidden />}
+                <p className="mt-2 text-sm font-medium text-foreground">{jobState === "generating" ? "Your caption is being generated" : jobState === "saving" ? "Saving your private draft" : jobState === "publishing" ? "Publishing your post" : "Caption ready to review"}</p>
+                <p className="mt-1 text-xs leading-relaxed text-secondary">{jobState === "ready" ? "Saved under My captions. Nothing is public until you publish it." : "You can keep browsing while this finishes."}</p>
               </div>
-              {jobState === "ready" ? <button type="button" onClick={resetDraft} className="inline-flex size-9 shrink-0 items-center justify-center rounded-lg text-secondary hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent" aria-label="Discard draft"><X className="size-4" aria-hidden /></button> : null}
+              {jobState === "ready" ? <button type="button" onClick={discardDraft} className="inline-flex size-9 shrink-0 items-center justify-center rounded-lg text-secondary hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent" aria-label="Discard draft"><X className="size-4" aria-hidden /></button> : null}
             </div>
             {jobState === "ready" ? <div className="border-t border-border p-3"><button type="button" onClick={() => setIsReviewOpen(true)} className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 text-sm font-medium text-background transition-transform hover:-translate-y-0.5 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-accent"><UploadCloud className="size-4" aria-hidden />Review caption</button></div> : null}
           </motion.aside>
@@ -253,12 +322,12 @@ export function CaptionGenerator({ dailyDetour }: CaptionGeneratorProps) {
       </AnimatePresence>
 
       <AnimatePresence>
-        {isReviewOpen && draft && previewUrl ? (
+        {isReviewOpen && draft && selectedMediaUrl ? (
           <motion.div initial={shouldReduceMotion ? false : { opacity: 0 }} animate={{ opacity: 1 }} exit={shouldReduceMotion ? undefined : { opacity: 0 }} className="fixed inset-0 z-[60] grid place-items-end bg-primary/30 p-4 backdrop-blur-sm sm:place-items-center" role="dialog" aria-modal="true" aria-labelledby="review-caption-heading">
             <motion.div initial={shouldReduceMotion ? false : { opacity: 0, y: 18, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={shouldReduceMotion ? undefined : { opacity: 0, y: 12, scale: 0.98 }} transition={{ type: "spring", stiffness: 380, damping: 32 }} className="w-full max-w-xl overflow-hidden rounded-[1.75rem] border border-border bg-background shadow-2xl">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={previewUrl} alt="Upload being reviewed" className="aspect-[4/3] w-full object-cover" />
-              <div className="p-5 sm:p-7"><div className="flex items-start justify-between gap-4"><div><p className="text-sm font-medium text-accent">AI draft</p><h3 id="review-caption-heading" className="mt-1 font-editorial text-3xl font-medium tracking-tight text-primary">Review before it goes live.</h3></div><button type="button" onClick={() => setIsReviewOpen(false)} className="inline-flex size-11 items-center justify-center rounded-xl text-secondary hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-accent" aria-label="Close review"><X className="size-5" aria-hidden /></button></div><p className="mt-6 font-editorial text-2xl leading-snug tracking-tight text-foreground">{draft.caption}</p><p className="mt-3 text-sm text-secondary">Generated with {draft.generationModel}. The photo is uploaded only after you publish.</p><div className="mt-7 flex flex-wrap justify-end gap-3"><button type="button" onClick={() => setIsReviewOpen(false)} disabled={isWorking} className="inline-flex min-h-11 items-center rounded-xl border border-border px-4 text-sm font-medium text-foreground transition-colors hover:border-accent focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-accent">Keep editing</button><button type="button" onClick={publishCaption} disabled={isWorking} className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-primary px-4 text-sm font-medium text-background transition-transform hover:-translate-y-0.5 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-accent disabled:opacity-60">{isWorking ? <LoaderCircle className="size-4 animate-spin motion-reduce:animate-none" aria-hidden /> : <UploadCloud className="size-4" aria-hidden />}Publish to the feed</button></div></div>
+              <img src={selectedMediaUrl} alt={selectedStarterGif?.alt ?? "Upload being reviewed"} className="aspect-[4/3] w-full object-cover" />
+              <div className="p-5 sm:p-7"><div className="flex items-start justify-between gap-4"><div><p className="text-sm font-medium text-accent">AI draft</p><h3 id="review-caption-heading" className="mt-1 font-editorial text-3xl font-medium tracking-tight text-primary">Review before it goes live.</h3></div><button type="button" onClick={() => setIsReviewOpen(false)} className="inline-flex size-11 items-center justify-center rounded-xl text-secondary hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-accent" aria-label="Close review"><X className="size-5" aria-hidden /></button></div><p className="mt-6 font-editorial text-2xl leading-snug tracking-tight text-foreground">{draft.caption}</p><p className="mt-3 text-sm text-secondary">Generated with {draft.generationModel}. This private draft is saved under My captions until you publish.</p><div className="mt-7 flex flex-wrap justify-end gap-3"><button type="button" onClick={() => setIsReviewOpen(false)} disabled={isWorking} className="inline-flex min-h-11 items-center rounded-xl border border-border px-4 text-sm font-medium text-foreground transition-colors hover:border-accent focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-accent">Keep editing</button><button type="button" onClick={publishCaption} disabled={isWorking} className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-primary px-4 text-sm font-medium text-background transition-transform hover:-translate-y-0.5 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-accent disabled:opacity-60">{isWorking ? <LoaderCircle className="size-4 animate-spin motion-reduce:animate-none" aria-hidden /> : <UploadCloud className="size-4" aria-hidden />}Publish to the feed</button></div></div>
             </motion.div>
           </motion.div>
         ) : null}
