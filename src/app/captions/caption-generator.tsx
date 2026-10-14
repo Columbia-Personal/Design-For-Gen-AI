@@ -2,7 +2,7 @@
 
 import { Check, ImagePlus, LoaderCircle, Sparkles, UploadCloud, WandSparkles, X } from "lucide-react";
 import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from "motion/react";
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 const MAX_PROMPT_LENGTH = 280;
@@ -36,7 +36,6 @@ export function CaptionGenerator({ dailyDetour }: CaptionGeneratorProps) {
   const [jobState, setJobState] = useState<JobState>("idle");
   const [isReviewOpen, setIsReviewOpen] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
-  const [isPending, startTransition] = useTransition();
 
   useEffect(() => {
     return () => {
@@ -83,9 +82,12 @@ export function CaptionGenerator({ dailyDetour }: CaptionGeneratorProps) {
       return;
     }
 
-    startTransition(async () => {
-      setMessage(null);
-      setJobState("generating");
+    // This state update intentionally stays outside a transition. The status card is
+    // feedback for the click itself, so it needs to render before the network request.
+    setMessage(null);
+    setJobState("generating");
+
+    void (async () => {
       const formData = new FormData();
       formData.set("image", file);
       formData.set("prompt", prompt.trim());
@@ -100,14 +102,15 @@ export function CaptionGenerator({ dailyDetour }: CaptionGeneratorProps) {
       }
       setDraft({ caption: result.caption, generationModel: result.generationModel ?? "Gemini" });
       setJobState("ready");
-    });
+    })();
   }
 
   function publishCaption() {
     if (!file || !draft) return;
-    startTransition(async () => {
-      setMessage(null);
-      setJobState("publishing");
+    setMessage(null);
+    setJobState("publishing");
+
+    void (async () => {
       const formData = new FormData();
       formData.set("image", file);
       formData.set("caption", draft.caption);
@@ -125,10 +128,10 @@ export function CaptionGenerator({ dailyDetour }: CaptionGeneratorProps) {
       resetDraft();
       setMessage("Published. Your post is now in the feed.");
       router.refresh();
-    });
+    })();
   }
 
-  const isWorking = jobState === "generating" || jobState === "publishing" || isPending;
+  const isWorking = jobState === "generating" || jobState === "publishing";
 
   return (
     <LayoutGroup>
@@ -185,17 +188,17 @@ export function CaptionGenerator({ dailyDetour }: CaptionGeneratorProps) {
               </div>
 
               <label className="grid gap-2 text-sm font-medium text-foreground" htmlFor="caption-prompt">
-                Optional context
+                Context Gemini must use
                 <textarea
                   id="caption-prompt"
                   value={prompt}
                   onChange={(event) => setPrompt(event.target.value)}
                   maxLength={MAX_PROMPT_LENGTH}
                   rows={3}
-                  placeholder="Anything the photo does not explain, like where it happened or why the group chat is involved."
+                  placeholder="Add the one detail the caption has to use, like where it happened or why the group chat is involved."
                   className="min-h-28 resize-y rounded-xl border border-border bg-background px-3 py-3 text-base font-normal leading-relaxed text-foreground outline-none transition-colors duration-200 placeholder:text-secondary/70 focus:border-accent focus:ring-2 focus:ring-accent/20"
                 />
-                <span className="text-xs font-normal text-secondary">{prompt.length}/{MAX_PROMPT_LENGTH} characters</span>
+                <span className="text-xs font-normal text-secondary">{prompt.length}/{MAX_PROMPT_LENGTH} characters. Gemini will work this into the caption.</span>
               </label>
 
               {dailyDetour ? (
