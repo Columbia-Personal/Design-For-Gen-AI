@@ -30,7 +30,6 @@ export async function POST(request: Request) {
   const image = formData.get("image");
   const starterGif = getStarterGif(getString(formData, "starterGifId"));
   const prompt = getString(formData, "prompt");
-  const detour = getString(formData, "detour");
   if (!(image instanceof File) && !starterGif) return NextResponse.json({ error: "Choose a starter GIF or add a JPG, PNG, or WebP image first." }, { status: 400 });
   if (image instanceof File && (!ACCEPTED_IMAGE_TYPES.has(image.type) || image.size > MAX_IMAGE_BYTES)) {
     return NextResponse.json({ error: "Use a JPG, PNG, or WebP image that is 4 MB or smaller." }, { status: 400 });
@@ -45,7 +44,6 @@ export async function POST(request: Request) {
   try {
     const imageData = image instanceof File ? Buffer.from(await image.arrayBuffer()).toString("base64") : null;
     const requiredContext = [
-      detour ? `Daily prompt that the caption must answer: ${detour}` : "",
       prompt ? `Uploader detail that the caption must explicitly use: ${prompt}` : "",
     ].filter(Boolean).join("\n");
     const mediaInstruction = starterGif

@@ -1,9 +1,8 @@
 import Link from "next/link";
 import { connection } from "next/server";
 import { ArrowLeft, ArrowDownRight, Sparkles } from "lucide-react";
-import { CaptionList, type Caption, type CaptionDraft } from "./caption-list";
-import { CaptionGenerator } from "./caption-generator";
-import type { DailyDetour } from "./caption-generator";
+import { type Caption, type CaptionDraft } from "./caption-list";
+import { CaptionExperience } from "./caption-experience";
 import type { VoteTotal } from "./rating-controls";
 import { AuthButton } from "@/components/auth-button";
 import { getSupabase } from "@/lib/supabase";
@@ -23,8 +22,6 @@ type VoteTotalRow = VoteTotal & {
   caption_id: number;
 };
 
-type DailyDetourRow = DailyDetour & { active_on: string };
-
 type DraftRow = Omit<CaptionDraft, "media_url"> & {
   media_url: string | null;
   media_path: string | null;
@@ -39,25 +36,19 @@ export default async function CaptionsPage() {
     data: { user },
   } = await sessionSupabase.auth.getUser();
 
-  const [captionsResult, totalsResult, votesResult, dailyDetourResult, draftsResult] = await Promise.all([
+  const [captionsResult, totalsResult, votesResult, draftsResult] = await Promise.all([
     publicSupabase
       .from("captions")
-      .select("id, text, prompt, author_id, generation_model, media_key, media_url, media_alt, challenge_id, created_at")
+      .select("id, text, prompt, author_id, generation_model, media_key, media_url, media_alt, created_at")
       .order("created_at", { ascending: false }),
     publicSupabase.rpc("caption_vote_totals"),
     user
       ? sessionSupabase.from("caption_votes").select("caption_id, value")
       : Promise.resolve({ data: [] as VoteRow[], error: null }),
-    publicSupabase
-      .from("daily_detours")
-      .select("id, title, prompt, active_on")
-      .order("active_on", { ascending: false })
-      .limit(1)
-      .maybeSingle(),
     user
       ? sessionSupabase
         .from("caption_drafts")
-        .select("id, text, prompt, media_source, media_url, media_path, media_alt, challenge_id, created_at")
+        .select("id, text, prompt, media_source, media_url, media_path, media_alt, created_at")
         .order("created_at", { ascending: false })
       : Promise.resolve({ data: [] as DraftRow[], error: null }),
   ]);
@@ -65,7 +56,6 @@ export default async function CaptionsPage() {
   const captions = (captionsResult.data ?? []) as Caption[];
   const totals = (totalsResult.data ?? []) as VoteTotalRow[];
   const votes = (votesResult.data ?? []) as VoteRow[];
-  const dailyDetour = (dailyDetourResult.data ?? null) as DailyDetourRow | null;
   const draftRows = (draftsResult.data ?? []) as DraftRow[];
   const drafts = await Promise.all(
     draftRows.map(async (draft) => {
@@ -77,7 +67,6 @@ export default async function CaptionsPage() {
           media_source: draft.media_source,
           media_url: draft.media_url,
           media_alt: draft.media_alt,
-          challenge_id: draft.challenge_id,
           created_at: draft.created_at,
         } as CaptionDraft;
       }
@@ -91,7 +80,6 @@ export default async function CaptionsPage() {
         media_source: draft.media_source,
         media_url: signedMedia?.signedUrl ?? null,
         media_alt: draft.media_alt,
-        challenge_id: draft.challenge_id,
         created_at: draft.created_at,
       } as CaptionDraft;
     }),
@@ -156,43 +144,9 @@ export default async function CaptionsPage() {
           </div>
         </section>
 
-        <section className="py-14 sm:py-20" aria-labelledby="caption-list-heading">
-          {captionsResult.error ? (
-            <p className="rounded-2xl border border-destructive/30 bg-destructive/5 px-5 py-4 text-sm leading-relaxed text-secondary">
-              The captions could not be loaded. Please refresh and try again.
-            </p>
-          ) : (
-            <CaptionList
-              captions={captions}
-              userId={user?.id ?? null}
-              initialVotes={initialVotes}
-              initialTotals={initialTotals}
-              dailyDetour={dailyDetour}
-              drafts={drafts}
-            />
-          )}
-        </section>
-
-        <section id="make-a-caption" className="scroll-mt-28 border-t border-border py-14 sm:py-20" aria-labelledby="generation-heading">
-          {user ? (
-            <CaptionGenerator dailyDetour={dailyDetour} />
-          ) : (
-            <div className="relative overflow-hidden rounded-[2rem] border border-border bg-muted/40 p-6 sm:flex sm:items-center sm:justify-between sm:gap-8 sm:p-8">
-              <div aria-hidden className="absolute -bottom-20 -right-12 size-56 rounded-full bg-accent/10 blur-3xl" />
-              <div className="relative">
-                <h2 id="generation-heading" className="font-editorial text-3xl font-medium tracking-tight text-primary">
-                  Make a caption, then leave your mark on the feed.
-                </h2>
-                <p className="mt-3 max-w-xl text-base leading-relaxed text-secondary">
-                  Anyone can browse. Sign in to upload a photo, make an AI caption, and rate the posts that make the cut.
-                </p>
-              </div>
-              <div className="relative mt-5 sm:mt-0">
-                <AuthButton signInLabel="Sign in to contribute" />
-              </div>
-            </div>
-          )}
-        </section>
+        {captionsResult.error ? (
+          <section className="py-14 sm:py-20"><p className="rounded-2xl border border-destructive/30 bg-destructive/5 px-5 py-4 text-sm leading-relaxed text-secondary">The captions could not be loaded. Please refresh and try again.</p></section>
+        ) : <CaptionExperience captions={captions} userId={user?.id ?? null} initialVotes={initialVotes} initialTotals={initialTotals} drafts={drafts} />}
       </main>
 
       <footer className="border-t border-border px-6 py-7 sm:px-12">

@@ -10,8 +10,8 @@ import {
   FileClock,
   ListFilter,
   LoaderCircle,
-  Route,
   Sparkles,
+  Trash2,
   UploadCloud,
 } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
@@ -20,7 +20,6 @@ import { useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { getSceneMedia, SCENE_MEDIA } from "@/lib/scene-media";
 import { RatingControls, type VoteTotal } from "./rating-controls";
-import type { DailyDetour } from "./caption-generator";
 
 gsap.registerPlugin(ScrollTrigger);
 
@@ -33,7 +32,6 @@ export type Caption = {
   media_key: string | null;
   media_url: string | null;
   media_alt: string | null;
-  challenge_id: number | null;
   created_at: string;
 };
 
@@ -44,7 +42,6 @@ export type CaptionDraft = {
   media_source: "upload" | "starter-gif";
   media_url: string | null;
   media_alt: string;
-  challenge_id: number | null;
   created_at: string;
 };
 
@@ -53,12 +50,12 @@ type CaptionListProps = {
   userId: string | null;
   initialVotes: Record<number, -1 | 1>;
   initialTotals: Record<number, VoteTotal>;
-  dailyDetour: DailyDetour | null;
   drafts: CaptionDraft[];
+  onDraftDeleted: (draftId: string) => void;
 };
 
 type SortMode = "fresh" | "loved";
-type FilterMode = "all" | "made-here" | "starting-set" | "mine" | "daily-detour";
+type FilterMode = "all" | "made-here" | "starting-set" | "mine";
 
 const sortOptions: Array<{ id: SortMode; label: string; description: string }> = [
   { id: "fresh", label: "Fresh first", description: "What just landed" },
@@ -70,7 +67,6 @@ const filterOptions: Array<{ id: FilterMode; label: string }> = [
   { id: "made-here", label: "Made here" },
   { id: "starting-set", label: "Starting set" },
   { id: "mine", label: "My captions" },
-  { id: "daily-detour", label: "Daily Detour" },
 ];
 
 function captionScore(caption: Caption, totals: Record<number, VoteTotal>) {
@@ -113,7 +109,7 @@ function CaptionPrompt({ prompt }: { prompt: string }) {
   );
 }
 
-function DraftCard({ draft, onPublished }: { draft: CaptionDraft; onPublished: () => void }) {
+function DraftCard({ draft, onPublished, onDeleted }: { draft: CaptionDraft; onPublished: (draftId: string) => void; onDeleted: (draftId: string) => void }) {
   const router = useRouter();
   const [isPublishing, setIsPublishing] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -133,8 +129,25 @@ function DraftCard({ draft, onPublished }: { draft: CaptionDraft; onPublished: (
       return;
     }
     setMessage("Published to the feed.");
-    onPublished();
+    onPublished(draft.id);
     router.refresh();
+  }
+
+  async function deleteDraft() {
+    setIsPublishing(true);
+    setMessage(null);
+    const response = await fetch("/api/delete-draft", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ draftId: draft.id }),
+    });
+    const result = (await response.json().catch(() => null)) as { error?: string } | null;
+    if (!response.ok) {
+      setMessage(result?.error ?? "This draft could not be deleted. Try again.");
+      setIsPublishing(false);
+      return;
+    }
+    onDeleted(draft.id);
   }
 
   return (
@@ -165,15 +178,7 @@ function DraftCard({ draft, onPublished }: { draft: CaptionDraft; onPublished: (
         {draft.prompt ? <CaptionPrompt prompt={draft.prompt} /> : <p className="mt-4 text-sm text-secondary">No extra context was added.</p>}
         <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-border/80 pt-4">
           <p className="text-sm text-secondary">Only you can see this until you publish it.</p>
-          <button
-            type="button"
-            onClick={publishDraft}
-            disabled={isPublishing}
-            className="inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-xl bg-primary px-4 text-sm font-medium text-background transition-transform duration-200 hover:-translate-y-0.5 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {isPublishing ? <LoaderCircle className="size-4 animate-spin motion-reduce:animate-none" aria-hidden /> : <UploadCloud className="size-4" aria-hidden />}
-            Publish draft
-          </button>
+          <div className="flex flex-wrap gap-2"><button type="button" onClick={() => void deleteDraft()} disabled={isPublishing} className="inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-xl border border-border px-3 text-sm font-medium text-secondary transition-colors hover:border-destructive/50 hover:text-destructive focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-60"><Trash2 className="size-4" aria-hidden />Delete draft</button><button type="button" onClick={publishDraft} disabled={isPublishing} className="inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-xl bg-primary px-4 text-sm font-medium text-background transition-transform duration-200 hover:-translate-y-0.5 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-60">{isPublishing ? <LoaderCircle className="size-4 animate-spin motion-reduce:animate-none" aria-hidden /> : <UploadCloud className="size-4" aria-hidden />}Publish draft</button></div>
         </div>
         {message ? <p className="mt-3 text-sm text-secondary" role="status">{message}</p> : null}
       </div>
@@ -186,8 +191,8 @@ export function CaptionList({
   userId,
   initialVotes,
   initialTotals,
-  dailyDetour,
   drafts,
+  onDraftDeleted,
 }: CaptionListProps) {
   const shouldReduceMotion = useReducedMotion();
   const scope = useRef<HTMLDivElement>(null);
@@ -199,11 +204,6 @@ export function CaptionList({
   const [voteTotals, setVoteTotals] = useState(initialTotals);
 
   const generatedCount = captions.filter((caption) => caption.prompt).length;
-  const totalVotes = Object.values(voteTotals).reduce(
-    (sum, total) => sum + total.upvotes + total.downvotes,
-    0,
-  );
-
   const spotlightCaptions = useMemo(
     () =>
       [...captions]
@@ -218,7 +218,6 @@ export function CaptionList({
       if (filter === "made-here") return Boolean(caption.prompt);
       if (filter === "starting-set") return !caption.prompt;
       if (filter === "mine") return Boolean(userId && caption.author_id === userId);
-      if (filter === "daily-detour") return Boolean(dailyDetour && caption.challenge_id === dailyDetour.id);
       return true;
     });
 
@@ -229,7 +228,7 @@ export function CaptionList({
       }
       return b.created_at.localeCompare(a.created_at);
     });
-  }, [captions, dailyDetour, filter, sort, userId, voteTotals]);
+  }, [captions, filter, sort, userId, voteTotals]);
 
   const visibleCaptions = filteredCaptions.slice(0, visibleCount);
   const activeSort = sortOptions.find((option) => option.id === sort) ?? sortOptions[0];
@@ -357,12 +356,10 @@ export function CaptionList({
           </div>
 
           <div className="flex min-h-44 flex-col justify-between rounded-[1.75rem] border border-border bg-muted/50 p-5 lg:col-span-4">
-            <Route className="size-5 text-accent" aria-hidden />
+            <FileClock className="size-5 text-accent" aria-hidden />
             <div>
-              <p className="text-sm font-medium text-foreground">Daily Detour</p>
-              <p className="mt-2 max-w-xs font-editorial text-xl leading-snug tracking-tight text-primary">
-                {dailyDetour?.prompt ?? `${totalVotes} votes have shaped what rises in the feed.`}
-              </p>
+              <p className="font-editorial text-4xl font-medium tracking-tight text-primary">{drafts.length}</p>
+              <p className="mt-1 max-w-xs text-sm leading-relaxed text-secondary">private drafts are waiting in My captions.</p>
             </div>
           </div>
         </div>
@@ -415,7 +412,7 @@ export function CaptionList({
           <div className="mt-6 flex flex-wrap gap-2" aria-label="Caption filters">
             {filterOptions.map((option) => {
               const isActive = option.id === filter;
-              const unavailable = (option.id === "mine" && !userId) || (option.id === "daily-detour" && !dailyDetour);
+              const unavailable = option.id === "mine" && !userId;
               return (
                 <button
                   key={option.id}
@@ -457,7 +454,7 @@ export function CaptionList({
             drafts.length ? (
               <ol className="grid gap-3" aria-label="Private caption drafts">
                 <AnimatePresence initial={false} mode="popLayout">
-                  {drafts.map((draft) => <DraftCard key={draft.id} draft={draft} onPublished={() => setMyCaptionView("published")} />)}
+                  {drafts.map((draft) => <DraftCard key={draft.id} draft={draft} onPublished={(draftId) => { onDraftDeleted(draftId); setMyCaptionView("published"); }} onDeleted={onDraftDeleted} />)}
                 </AnimatePresence>
               </ol>
             ) : (
@@ -505,7 +502,6 @@ export function CaptionList({
                         <p className="max-w-2xl font-editorial text-2xl leading-snug tracking-tight text-foreground sm:text-3xl">
                           {caption.text}
                         </p>
-                        {dailyDetour && caption.challenge_id === dailyDetour.id ? <p className="mt-3 inline-flex rounded-full bg-accent/10 px-3 py-1 text-xs font-medium text-accent">Daily Detour</p> : null}
                         {caption.prompt ? (
                           <CaptionPrompt prompt={caption.prompt} />
                         ) : (

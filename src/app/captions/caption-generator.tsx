@@ -9,9 +9,17 @@ import { getStarterGif, STARTER_GIFS } from "@/lib/starter-gifs";
 const MAX_PROMPT_LENGTH = 280;
 const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
 
-export type DailyDetour = { id: number; title: string; prompt: string };
-
 type JobState = "idle" | "generating" | "saving" | "ready" | "publishing";
+
+export type SavedDraft = {
+  id: string;
+  text: string;
+  prompt: string | null;
+  media_source: "upload" | "starter-gif";
+  media_url: string | null;
+  media_alt: string;
+  created_at: string;
+};
 
 type Draft = {
   id: string;
@@ -19,13 +27,17 @@ type Draft = {
   generationModel: string;
 };
 
-type CaptionGeneratorProps = { dailyDetour: DailyDetour | null };
+type CaptionGeneratorProps = {
+  onDraftSaved: (draft: SavedDraft) => void;
+  onDraftUpdated: (draft: SavedDraft) => void;
+  onDraftDeleted: (draftId: string) => void;
+};
 
 function isAcceptedImage(file: File) {
   return ["image/jpeg", "image/png", "image/webp"].includes(file.type) && file.size <= MAX_IMAGE_BYTES;
 }
 
-export function CaptionGenerator({ dailyDetour }: CaptionGeneratorProps) {
+export function CaptionGenerator({ onDraftSaved, onDraftUpdated, onDraftDeleted }: CaptionGeneratorProps) {
   const router = useRouter();
   const shouldReduceMotion = useReducedMotion();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -34,8 +46,8 @@ export function CaptionGenerator({ dailyDetour }: CaptionGeneratorProps) {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [starterGifId, setStarterGifId] = useState<string | null>(null);
   const [prompt, setPrompt] = useState("");
-  const [useDetour, setUseDetour] = useState(false);
   const [draft, setDraft] = useState<Draft | null>(null);
+  const [editableCaption, setEditableCaption] = useState("");
   const [jobState, setJobState] = useState<JobState>("idle");
   const [isReviewOpen, setIsReviewOpen] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -82,24 +94,28 @@ export function CaptionGenerator({ dailyDetour }: CaptionGeneratorProps) {
 
   function resetDraft() {
     setDraft(null);
+    setEditableCaption("");
     setJobState("idle");
     setIsReviewOpen(false);
     clearFile();
     setPrompt("");
-    setUseDetour(false);
     setMessage(null);
   }
 
-  function discardDraft() {
+  async function discardDraft() {
     const draftId = draft?.id;
-    resetDraft();
-    if (draftId) {
-      void fetch("/api/delete-draft", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ draftId }),
-      }).then(() => router.refresh());
+    if (!draftId) return resetDraft();
+    const response = await fetch("/api/delete-draft", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ draftId }),
+    });
+    if (!response.ok) {
+      setMessage("Your draft could not be discarded. Try again.");
+      return;
     }
+    onDraftDeleted(draftId);
+    resetDraft();
   }
 
   function generateCaption(event: React.FormEvent<HTMLFormElement>) {
@@ -120,7 +136,6 @@ export function CaptionGenerator({ dailyDetour }: CaptionGeneratorProps) {
       if (file) formData.set("image", file);
       if (starterGif) formData.set("starterGifId", starterGif.id);
       formData.set("prompt", prompt.trim());
-      if (useDetour && dailyDetour) formData.set("detour", dailyDetour.prompt);
 
       const response = await fetch("/api/generate-caption", { method: "POST", body: formData });
       const result = (await response.json().catch(() => null)) as { caption?: string; generationModel?: string; error?: string } | null;
@@ -135,16 +150,17 @@ export function CaptionGenerator({ dailyDetour }: CaptionGeneratorProps) {
       if (starterGif) saveFormData.set("starterGifId", starterGif.id);
       saveFormData.set("caption", result.caption);
       saveFormData.set("prompt", prompt.trim());
-      if (useDetour && dailyDetour) saveFormData.set("challengeId", String(dailyDetour.id));
 
       const saveResponse = await fetch("/api/save-draft", { method: "POST", body: saveFormData });
-      const saved = (await saveResponse.json().catch(() => null)) as { draft?: { id?: string }; error?: string } | null;
+      const saved = (await saveResponse.json().catch(() => null)) as { draft?: SavedDraft; error?: string } | null;
       if (!saveResponse.ok || !saved?.draft?.id) {
         setJobState("idle");
         setMessage(saved?.error ?? "Your caption was generated, but the draft could not be saved. Try again.");
         return;
       }
       setDraft({ id: saved.draft.id, caption: result.caption, generationModel: result.generationModel ?? "Gemini" });
+      setEditableCaption(result.caption);
+      onDraftSaved(saved.draft);
       setJobState("ready");
     })();
   }
@@ -166,6 +182,7 @@ export function CaptionGenerator({ dailyDetour }: CaptionGeneratorProps) {
         setMessage(result?.error ?? "Your post could not be published. Try again.");
         return;
       }
+      onDraftDeleted(draft.id);
       resetDraft();
       setMessage("Published. Your post is now in the feed.");
       router.refresh();
@@ -175,6 +192,25 @@ export function CaptionGenerator({ dailyDetour }: CaptionGeneratorProps) {
   const selectedStarterGif = getStarterGif(starterGifId);
   const selectedMediaUrl = previewUrl ?? selectedStarterGif?.url ?? null;
   const isWorking = jobState === "generating" || jobState === "saving" || jobState === "publishing";
+
+  async function saveDraftEdits() {
+    if (!draft || !editableCaption.trim() || editableCaption.trim() === draft.caption) return;
+    setJobState("saving");
+    const response = await fetch("/api/update-draft", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ draftId: draft.id, caption: editableCaption }),
+    });
+    const result = (await response.json().catch(() => null)) as { draft?: SavedDraft; error?: string } | null;
+    if (!response.ok || !result?.draft) {
+      setJobState("ready");
+      setMessage(result?.error ?? "Your draft could not be updated. Try again.");
+      return;
+    }
+    setDraft((current) => current ? { ...current, caption: result.draft!.text } : current);
+    onDraftUpdated(result.draft);
+    setJobState("ready");
+  }
 
   return (
     <LayoutGroup>
@@ -270,18 +306,6 @@ export function CaptionGenerator({ dailyDetour }: CaptionGeneratorProps) {
                 <span className="text-xs font-normal text-secondary">{prompt.length}/{MAX_PROMPT_LENGTH} characters. Gemini will work this into the caption.</span>
               </label>
 
-              {dailyDetour ? (
-                <button
-                  type="button"
-                  aria-pressed={useDetour}
-                  onClick={() => setUseDetour((value) => !value)}
-                  className={`flex min-h-11 items-start gap-3 rounded-2xl border p-4 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-accent ${useDetour ? "border-accent bg-accent/10" : "border-border hover:border-accent/50"}`}
-                >
-                  <span className={`mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full border ${useDetour ? "border-accent bg-accent text-background" : "border-secondary/40"}`}><Check className={`size-3 ${useDetour ? "opacity-100" : "opacity-0"}`} aria-hidden /></span>
-                  <span><span className="block text-sm font-medium text-foreground">Daily Detour · {dailyDetour.title}</span><span className="mt-1 block text-sm leading-relaxed text-secondary">{dailyDetour.prompt}</span></span>
-                </button>
-              ) : null}
-
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <p className="min-h-5 text-sm text-secondary" aria-live="polite">{message}</p>
                 <motion.button type="submit" disabled={!selectedMediaUrl || isWorking} whileTap={shouldReduceMotion ? undefined : { scale: 0.97 }} className="inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-medium text-background transition-transform duration-200 hover:-translate-y-0.5 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-60">
@@ -314,7 +338,7 @@ export function CaptionGenerator({ dailyDetour }: CaptionGeneratorProps) {
                 <p className="mt-2 text-sm font-medium text-foreground">{jobState === "generating" ? "Your caption is being generated" : jobState === "saving" ? "Saving your private draft" : jobState === "publishing" ? "Publishing your post" : "Caption ready to review"}</p>
                 <p className="mt-1 text-xs leading-relaxed text-secondary">{jobState === "ready" ? "Saved under My captions. Nothing is public until you publish it." : "You can keep browsing while this finishes."}</p>
               </div>
-              {jobState === "ready" ? <button type="button" onClick={discardDraft} className="inline-flex size-9 shrink-0 items-center justify-center rounded-lg text-secondary hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent" aria-label="Discard draft"><X className="size-4" aria-hidden /></button> : null}
+              {jobState === "ready" ? <button type="button" onClick={() => void discardDraft()} className="inline-flex size-9 shrink-0 items-center justify-center rounded-lg text-secondary hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent" aria-label="Discard draft"><X className="size-4" aria-hidden /></button> : null}
             </div>
             {jobState === "ready" ? <div className="border-t border-border p-3"><button type="button" onClick={() => setIsReviewOpen(true)} className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 text-sm font-medium text-background transition-transform hover:-translate-y-0.5 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-accent"><UploadCloud className="size-4" aria-hidden />Review caption</button></div> : null}
           </motion.aside>
@@ -327,7 +351,7 @@ export function CaptionGenerator({ dailyDetour }: CaptionGeneratorProps) {
             <motion.div initial={shouldReduceMotion ? false : { opacity: 0, y: 18, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={shouldReduceMotion ? undefined : { opacity: 0, y: 12, scale: 0.98 }} transition={{ type: "spring", stiffness: 380, damping: 32 }} className="w-full max-w-xl overflow-hidden rounded-[1.75rem] border border-border bg-background shadow-2xl">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={selectedMediaUrl} alt={selectedStarterGif?.alt ?? "Upload being reviewed"} className="aspect-[4/3] w-full object-cover" />
-              <div className="p-5 sm:p-7"><div className="flex items-start justify-between gap-4"><div><p className="text-sm font-medium text-accent">AI draft</p><h3 id="review-caption-heading" className="mt-1 font-editorial text-3xl font-medium tracking-tight text-primary">Review before it goes live.</h3></div><button type="button" onClick={() => setIsReviewOpen(false)} className="inline-flex size-11 items-center justify-center rounded-xl text-secondary hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-accent" aria-label="Close review"><X className="size-5" aria-hidden /></button></div><p className="mt-6 font-editorial text-2xl leading-snug tracking-tight text-foreground">{draft.caption}</p><p className="mt-3 text-sm text-secondary">Generated with {draft.generationModel}. This private draft is saved under My captions until you publish.</p><div className="mt-7 flex flex-wrap justify-end gap-3"><button type="button" onClick={() => setIsReviewOpen(false)} disabled={isWorking} className="inline-flex min-h-11 items-center rounded-xl border border-border px-4 text-sm font-medium text-foreground transition-colors hover:border-accent focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-accent">Keep editing</button><button type="button" onClick={publishCaption} disabled={isWorking} className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-primary px-4 text-sm font-medium text-background transition-transform hover:-translate-y-0.5 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-accent disabled:opacity-60">{isWorking ? <LoaderCircle className="size-4 animate-spin motion-reduce:animate-none" aria-hidden /> : <UploadCloud className="size-4" aria-hidden />}Publish to the feed</button></div></div>
+              <div className="p-5 sm:p-7"><div className="flex items-start justify-between gap-4"><div><p className="text-sm font-medium text-accent">AI draft</p><h3 id="review-caption-heading" className="mt-1 font-editorial text-3xl font-medium tracking-tight text-primary">Review before it goes live.</h3></div><button type="button" onClick={() => setIsReviewOpen(false)} className="inline-flex size-11 items-center justify-center rounded-xl text-secondary hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-accent" aria-label="Close review"><X className="size-5" aria-hidden /></button></div><label className="mt-6 grid gap-2 text-sm font-medium text-foreground" htmlFor="draft-caption-edit">Tweak the line<textarea id="draft-caption-edit" value={editableCaption} onChange={(event) => setEditableCaption(event.target.value)} maxLength={220} rows={3} className="min-h-28 resize-y rounded-xl border border-border bg-background px-3 py-3 font-editorial text-xl font-medium leading-snug tracking-tight text-foreground outline-none transition-colors duration-200 focus:border-accent focus:ring-2 focus:ring-accent/20" /></label><p className="mt-3 text-sm text-secondary">Generated with {draft.generationModel}. This private draft is saved under My captions until you publish.</p><div className="mt-7 flex flex-wrap justify-end gap-3"><button type="button" onClick={() => void saveDraftEdits()} disabled={isWorking || editableCaption.trim() === draft.caption || !editableCaption.trim()} className="inline-flex min-h-11 items-center rounded-xl border border-border px-4 text-sm font-medium text-foreground transition-colors hover:border-accent focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-60">Keep editing</button><button type="button" onClick={publishCaption} disabled={isWorking || editableCaption.trim() !== draft.caption} className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-primary px-4 text-sm font-medium text-background transition-transform hover:-translate-y-0.5 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-accent disabled:opacity-60">{isWorking ? <LoaderCircle className="size-4 animate-spin motion-reduce:animate-none" aria-hidden /> : <UploadCloud className="size-4" aria-hidden />}Publish to the feed</button></div></div>
             </motion.div>
           </motion.div>
         ) : null}

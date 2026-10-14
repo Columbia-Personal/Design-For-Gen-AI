@@ -20,7 +20,7 @@ export async function POST(request: Request) {
 
   const { data: draft, error: draftError } = await supabase
     .from("caption_drafts")
-    .select("id, text, prompt, generation_model, media_source, media_url, media_path, media_alt, challenge_id")
+    .select("id, text, prompt, generation_model, media_source, media_url, media_path, media_alt")
     .eq("id", draftId)
     .maybeSingle();
   if (draftError || !draft) return NextResponse.json({ error: "This draft is no longer available." }, { status: 404 });
@@ -50,7 +50,6 @@ export async function POST(request: Request) {
       media_key: draft.media_source === "starter-gif" ? "reaction-gif" : "user-upload",
       media_url: mediaUrl,
       media_alt: draft.media_alt,
-      challenge_id: draft.challenge_id,
     })
     .select("id")
     .single();

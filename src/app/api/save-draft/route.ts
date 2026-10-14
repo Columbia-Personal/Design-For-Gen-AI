@@ -30,7 +30,6 @@ export async function POST(request: Request) {
   const starterGif = getStarterGif(getString(formData, "starterGifId"));
   const text = getString(formData, "caption");
   const prompt = getString(formData, "prompt");
-  const challengeId = Number(getString(formData, "challengeId"));
 
   if (!text || text.length > MAX_CAPTION_LENGTH) return NextResponse.json({ error: "The caption needs to be between 1 and 220 characters." }, { status: 400 });
   if (prompt.length > MAX_PROMPT_LENGTH) return NextResponse.json({ error: "Keep the supporting context under 280 characters." }, { status: 400 });
@@ -59,14 +58,17 @@ export async function POST(request: Request) {
       media_url: starterGif?.url ?? null,
       media_path: mediaPath,
       media_alt: starterGif?.alt || prompt || "Image uploaded for a private Caption Lab draft.",
-      challenge_id: Number.isSafeInteger(challengeId) && challengeId > 0 ? challengeId : null,
     })
-    .select("id")
+    .select("id, text, prompt, media_source, media_url, media_path, media_alt, created_at")
     .single();
 
   if (draftError || !draft) {
     if (mediaPath) await supabase.storage.from("caption-drafts").remove([mediaPath]);
     return NextResponse.json({ error: "Your draft could not be saved. Try again." }, { status: 500 });
   }
-  return NextResponse.json({ draft });
+  const signedMedia = mediaPath
+    ? await supabase.storage.from("caption-drafts").createSignedUrl(mediaPath, 60 * 60)
+    : null;
+  const mediaUrl = signedMedia?.data?.signedUrl ?? draft.media_url;
+  return NextResponse.json({ draft: { ...draft, media_url: mediaUrl } });
 }

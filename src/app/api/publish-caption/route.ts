@@ -30,7 +30,6 @@ export async function POST(request: Request) {
   const text = getString(formData, "caption");
   const prompt = getString(formData, "prompt");
   const mediaAlt = getString(formData, "mediaAlt");
-  const challengeId = Number(getString(formData, "challengeId"));
   if (!(image instanceof File)) return NextResponse.json({ error: "Add an image before publishing." }, { status: 400 });
   if (!ACCEPTED_IMAGE_TYPES.has(image.type) || image.size > MAX_IMAGE_BYTES) {
     return NextResponse.json({ error: "Use a JPG, PNG, or WebP image that is 4 MB or smaller." }, { status: 400 });
@@ -57,7 +56,6 @@ export async function POST(request: Request) {
       media_key: "user-upload",
       media_url: publicUrl.publicUrl,
       media_alt: mediaAlt || "Image uploaded for a Caption Lab post.",
-      challenge_id: Number.isSafeInteger(challengeId) && challengeId > 0 ? challengeId : null,
     })
     .select("id")
     .single();
