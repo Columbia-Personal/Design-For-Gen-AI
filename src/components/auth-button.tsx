@@ -45,7 +45,9 @@ export function AuthButton({ signInLabel = "Sign in" }: AuthButtonProps) {
     startTransition(async () => {
       setMessage(null);
       const supabase = createClient();
-      const redirectTo = `${window.location.origin}/auth/callback`;
+      const redirectTo = window.location.hostname === "localhost"
+        ? `${window.location.origin}/auth/callback`
+        : "https://design-for-gen-ai.vercel.app/auth/callback";
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: { redirectTo },
