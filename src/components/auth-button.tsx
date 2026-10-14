@@ -45,9 +45,10 @@ export function AuthButton({ signInLabel = "Sign in" }: AuthButtonProps) {
     startTransition(async () => {
       setMessage(null);
       const supabase = createClient();
-      const redirectTo = window.location.hostname === "localhost"
-        ? `${window.location.origin}/auth/callback`
-        : "https://design-for-gen-ai.vercel.app/auth/callback";
+      // OAuth's PKCE verifier is stored on the hostname that begins the flow.
+      // The callback must return to that same deployment, including immutable
+      // Vercel URLs used for assignment submissions.
+      const redirectTo = `${window.location.origin}/auth/callback`;
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: { redirectTo },

@@ -51,7 +51,7 @@ type CaptionListProps = {
   initialVotes: Record<number, -1 | 1>;
   initialTotals: Record<number, VoteTotal>;
   drafts: CaptionDraft[];
-  onDraftDeleted: (draftId: string) => void;
+  onDraftResolved: (draftId: string, status: "deleted" | "published") => void;
 };
 
 type SortMode = "fresh" | "loved";
@@ -109,7 +109,7 @@ function CaptionPrompt({ prompt }: { prompt: string }) {
   );
 }
 
-function DraftCard({ draft, onPublished, onDeleted }: { draft: CaptionDraft; onPublished: (draftId: string) => void; onDeleted: (draftId: string) => void }) {
+function DraftCard({ draft, onResolved }: { draft: CaptionDraft; onResolved: (draftId: string, status: "deleted" | "published") => void }) {
   const router = useRouter();
   const [isPublishing, setIsPublishing] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -129,7 +129,7 @@ function DraftCard({ draft, onPublished, onDeleted }: { draft: CaptionDraft; onP
       return;
     }
     setMessage("Published to the feed.");
-    onPublished(draft.id);
+    onResolved(draft.id, "published");
     router.refresh();
   }
 
@@ -147,7 +147,7 @@ function DraftCard({ draft, onPublished, onDeleted }: { draft: CaptionDraft; onP
       setIsPublishing(false);
       return;
     }
-    onDeleted(draft.id);
+    onResolved(draft.id, "deleted");
   }
 
   return (
@@ -192,7 +192,7 @@ export function CaptionList({
   initialVotes,
   initialTotals,
   drafts,
-  onDraftDeleted,
+  onDraftResolved,
 }: CaptionListProps) {
   const shouldReduceMotion = useReducedMotion();
   const scope = useRef<HTMLDivElement>(null);
@@ -241,6 +241,11 @@ export function CaptionList({
   function chooseFilter(nextFilter: FilterMode) {
     setFilter(nextFilter);
     setVisibleCount(6);
+    if (nextFilter === "mine" && nextFilter !== filter) {
+      window.requestAnimationFrame(() => {
+        document.querySelector<HTMLElement>("[data-feed-stream]")?.scrollIntoView({ behavior: shouldReduceMotion ? "auto" : "smooth", block: "start" });
+      });
+    }
   }
 
   function handleVoteSaved(captionId: number, totals: VoteTotal) {
@@ -365,7 +370,7 @@ export function CaptionList({
         </div>
       </section>
 
-      <section data-feed-area className="mt-14 grid gap-8 lg:grid-cols-[15rem_minmax(0,1fr)] lg:gap-12" aria-labelledby="caption-list-heading">
+      <section data-feed-area className="mt-14 grid scroll-mt-28 gap-8 lg:grid-cols-[15rem_minmax(0,1fr)] lg:gap-12" aria-labelledby="caption-list-heading">
         <aside data-feed-rail className="self-start rounded-[1.75rem] border border-border bg-background/80 p-5 shadow-sm backdrop-blur lg:sticky lg:top-28">
           <div data-feed-intro>
             <ListFilter className="size-5 text-accent" aria-hidden />
@@ -454,7 +459,7 @@ export function CaptionList({
             drafts.length ? (
               <ol className="grid gap-3" aria-label="Private caption drafts">
                 <AnimatePresence initial={false} mode="popLayout">
-                  {drafts.map((draft) => <DraftCard key={draft.id} draft={draft} onPublished={(draftId) => { onDraftDeleted(draftId); setMyCaptionView("published"); }} onDeleted={onDraftDeleted} />)}
+                  {drafts.map((draft) => <DraftCard key={draft.id} draft={draft} onResolved={(draftId, status) => { onDraftResolved(draftId, status); if (status === "published") setMyCaptionView("published"); }} />)}
                 </AnimatePresence>
               </ol>
             ) : (

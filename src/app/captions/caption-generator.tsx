@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, ImagePlus, LoaderCircle, Sparkles, UploadCloud, WandSparkles, X } from "lucide-react";
+import { Check, ImagePlus, LoaderCircle, RefreshCw, Sparkles, UploadCloud, WandSparkles, X } from "lucide-react";
 import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -9,7 +9,8 @@ import { getStarterGif, STARTER_GIFS } from "@/lib/starter-gifs";
 const MAX_PROMPT_LENGTH = 280;
 const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
 
-type JobState = "idle" | "generating" | "saving" | "ready" | "publishing";
+type JobState = "idle" | "generating" | "saving" | "ready" | "publishing" | "deleted";
+type DraftResolution = { id: string; status: "deleted" | "published" } | null;
 
 export type SavedDraft = {
   id: string;
@@ -31,13 +32,14 @@ type CaptionGeneratorProps = {
   onDraftSaved: (draft: SavedDraft) => void;
   onDraftUpdated: (draft: SavedDraft) => void;
   onDraftDeleted: (draftId: string) => void;
+  externallyResolvedDraft: DraftResolution;
 };
 
 function isAcceptedImage(file: File) {
   return ["image/jpeg", "image/png", "image/webp"].includes(file.type) && file.size <= MAX_IMAGE_BYTES;
 }
 
-export function CaptionGenerator({ onDraftSaved, onDraftUpdated, onDraftDeleted }: CaptionGeneratorProps) {
+export function CaptionGenerator({ onDraftSaved, onDraftUpdated, onDraftDeleted, externallyResolvedDraft }: CaptionGeneratorProps) {
   const router = useRouter();
   const shouldReduceMotion = useReducedMotion();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -192,6 +194,11 @@ export function CaptionGenerator({ onDraftSaved, onDraftUpdated, onDraftDeleted 
   const selectedStarterGif = getStarterGif(starterGifId);
   const selectedMediaUrl = previewUrl ?? selectedStarterGif?.url ?? null;
   const isWorking = jobState === "generating" || jobState === "saving" || jobState === "publishing";
+  const isDraftResolvedExternally = Boolean(draft && externallyResolvedDraft?.id === draft.id);
+  const displayJobState: JobState = isDraftResolvedExternally ? "deleted" : jobState;
+  const deletedDraftMessage = externallyResolvedDraft?.status === "published"
+    ? "This draft was published from My captions."
+    : "This draft was deleted from My captions and can no longer be reviewed or published.";
 
   async function saveDraftEdits() {
     if (!draft || !editableCaption.trim() || editableCaption.trim() === draft.caption) return;
@@ -210,6 +217,29 @@ export function CaptionGenerator({ onDraftSaved, onDraftUpdated, onDraftDeleted 
     setDraft((current) => current ? { ...current, caption: result.draft!.text } : current);
     onDraftUpdated(result.draft);
     setJobState("ready");
+    setMessage("Saved to your private draft.");
+  }
+
+  async function retryCaption() {
+    if (!draft) return;
+    setMessage("Writing another take with the same image and context…");
+    setJobState("generating");
+    const response = await fetch("/api/retry-draft", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ draftId: draft.id }),
+    });
+    const result = (await response.json().catch(() => null)) as { draft?: SavedDraft; generationModel?: string; error?: string } | null;
+    if (!response.ok || !result?.draft) {
+      setJobState("ready");
+      setMessage(result?.error ?? "A new caption could not be made. Try again.");
+      return;
+    }
+    setDraft({ id: result.draft.id, caption: result.draft.text, generationModel: result.generationModel ?? "Gemini" });
+    setEditableCaption(result.draft.text);
+    onDraftUpdated(result.draft);
+    setJobState("ready");
+    setMessage("A new caption is ready to review.");
   }
 
   return (
@@ -325,7 +355,7 @@ export function CaptionGenerator({ onDraftSaved, onDraftUpdated, onDraftDeleted 
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={shouldReduceMotion ? undefined : { opacity: 0, y: 36, scale: 0.92 }}
             transition={{ type: "spring", stiffness: 360, damping: 30, mass: 0.72 }}
-            className="fixed bottom-5 right-5 z-50 w-[min(25rem,calc(100vw-2.5rem))] overflow-hidden rounded-[1.6rem] border border-border bg-background shadow-2xl shadow-primary/20"
+            className={`fixed bottom-5 right-5 z-50 w-[min(25rem,calc(100vw-2.5rem))] overflow-hidden rounded-[1.6rem] border border-border bg-background shadow-2xl shadow-primary/20 transition-opacity duration-200 ${displayJobState === "deleted" ? "opacity-65" : "opacity-100"}`}
             aria-live="polite"
           >
             <div className="flex gap-3 p-3">
@@ -334,24 +364,25 @@ export function CaptionGenerator({ onDraftSaved, onDraftUpdated, onDraftDeleted 
                 <img src={selectedMediaUrl} alt={selectedStarterGif?.alt ?? "Selected upload"} className="size-full object-cover" />
               </motion.div>
               <div className="min-w-0 flex-1 py-1">
-                {jobState === "generating" || jobState === "saving" || jobState === "publishing" ? <LoaderCircle className="size-5 animate-spin text-accent motion-reduce:animate-none" aria-hidden /> : <Check className="size-5 text-emerald-600" aria-hidden />}
-                <p className="mt-2 text-sm font-medium text-foreground">{jobState === "generating" ? "Your caption is being generated" : jobState === "saving" ? "Saving your private draft" : jobState === "publishing" ? "Publishing your post" : "Caption ready to review"}</p>
-                <p className="mt-1 text-xs leading-relaxed text-secondary">{jobState === "ready" ? "Saved under My captions. Nothing is public until you publish it." : "You can keep browsing while this finishes."}</p>
+                {displayJobState === "generating" || displayJobState === "saving" || displayJobState === "publishing" ? <LoaderCircle className="size-5 animate-spin text-accent motion-reduce:animate-none" aria-hidden /> : displayJobState === "deleted" ? <X className="size-5 text-secondary" aria-hidden /> : <Check className="size-5 text-emerald-600" aria-hidden />}
+                <p className="mt-2 text-sm font-medium text-foreground">{displayJobState === "generating" ? "Your caption is being generated" : displayJobState === "saving" ? "Saving your private draft" : displayJobState === "publishing" ? "Publishing your post" : displayJobState === "deleted" ? "Draft deleted" : "Caption ready to review"}</p>
+                <p className="mt-1 text-xs leading-relaxed text-secondary">{displayJobState === "ready" ? "Saved under My captions. Nothing is public until you publish it." : displayJobState === "deleted" ? `${deletedDraftMessage} You can dismiss this notice.` : "You can keep browsing while this finishes."}</p>
               </div>
-              {jobState === "ready" ? <button type="button" onClick={() => void discardDraft()} className="inline-flex size-9 shrink-0 items-center justify-center rounded-lg text-secondary hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent" aria-label="Discard draft"><X className="size-4" aria-hidden /></button> : null}
+              {displayJobState === "ready" ? <button type="button" onClick={() => void discardDraft()} className="inline-flex size-9 shrink-0 items-center justify-center rounded-lg text-secondary hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent" aria-label="Discard draft"><X className="size-4" aria-hidden /></button> : null}
+              {displayJobState === "deleted" ? <button type="button" onClick={resetDraft} className="inline-flex size-9 shrink-0 items-center justify-center rounded-lg text-secondary hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent" aria-label="Dismiss deleted draft notice"><X className="size-4" aria-hidden /></button> : null}
             </div>
-            {jobState === "ready" ? <div className="border-t border-border p-3"><button type="button" onClick={() => setIsReviewOpen(true)} className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 text-sm font-medium text-background transition-transform hover:-translate-y-0.5 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-accent"><UploadCloud className="size-4" aria-hidden />Review caption</button></div> : null}
+            {displayJobState === "ready" ? <div className="border-t border-border p-3"><button type="button" onClick={() => setIsReviewOpen(true)} className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 text-sm font-medium text-background transition-transform hover:-translate-y-0.5 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-accent"><UploadCloud className="size-4" aria-hidden />Review caption</button></div> : null}
           </motion.aside>
         ) : null}
       </AnimatePresence>
 
       <AnimatePresence>
-        {isReviewOpen && draft && selectedMediaUrl ? (
+        {isReviewOpen && draft && selectedMediaUrl && !isDraftResolvedExternally ? (
           <motion.div initial={shouldReduceMotion ? false : { opacity: 0 }} animate={{ opacity: 1 }} exit={shouldReduceMotion ? undefined : { opacity: 0 }} className="fixed inset-0 z-[60] grid place-items-end bg-primary/30 p-4 backdrop-blur-sm sm:place-items-center" role="dialog" aria-modal="true" aria-labelledby="review-caption-heading">
             <motion.div initial={shouldReduceMotion ? false : { opacity: 0, y: 18, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={shouldReduceMotion ? undefined : { opacity: 0, y: 12, scale: 0.98 }} transition={{ type: "spring", stiffness: 380, damping: 32 }} className="w-full max-w-xl overflow-hidden rounded-[1.75rem] border border-border bg-background shadow-2xl">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={selectedMediaUrl} alt={selectedStarterGif?.alt ?? "Upload being reviewed"} className="aspect-[4/3] w-full object-cover" />
-              <div className="p-5 sm:p-7"><div className="flex items-start justify-between gap-4"><div><p className="text-sm font-medium text-accent">AI draft</p><h3 id="review-caption-heading" className="mt-1 font-editorial text-3xl font-medium tracking-tight text-primary">Review before it goes live.</h3></div><button type="button" onClick={() => setIsReviewOpen(false)} className="inline-flex size-11 items-center justify-center rounded-xl text-secondary hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-accent" aria-label="Close review"><X className="size-5" aria-hidden /></button></div><label className="mt-6 grid gap-2 text-sm font-medium text-foreground" htmlFor="draft-caption-edit">Tweak the line<textarea id="draft-caption-edit" value={editableCaption} onChange={(event) => setEditableCaption(event.target.value)} maxLength={220} rows={3} className="min-h-28 resize-y rounded-xl border border-border bg-background px-3 py-3 font-editorial text-xl font-medium leading-snug tracking-tight text-foreground outline-none transition-colors duration-200 focus:border-accent focus:ring-2 focus:ring-accent/20" /></label><p className="mt-3 text-sm text-secondary">Generated with {draft.generationModel}. This private draft is saved under My captions until you publish.</p><div className="mt-7 flex flex-wrap justify-end gap-3"><button type="button" onClick={() => void saveDraftEdits()} disabled={isWorking || editableCaption.trim() === draft.caption || !editableCaption.trim()} className="inline-flex min-h-11 items-center rounded-xl border border-border px-4 text-sm font-medium text-foreground transition-colors hover:border-accent focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-60">Keep editing</button><button type="button" onClick={publishCaption} disabled={isWorking || editableCaption.trim() !== draft.caption} className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-primary px-4 text-sm font-medium text-background transition-transform hover:-translate-y-0.5 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-accent disabled:opacity-60">{isWorking ? <LoaderCircle className="size-4 animate-spin motion-reduce:animate-none" aria-hidden /> : <UploadCloud className="size-4" aria-hidden />}Publish to the feed</button></div></div>
+              <div className="p-5 sm:p-7"><div className="flex items-start justify-between gap-4"><div><p className="text-sm font-medium text-accent">AI draft</p><h3 id="review-caption-heading" className="mt-1 font-editorial text-3xl font-medium tracking-tight text-primary">Review before it goes live.</h3></div><button type="button" onClick={() => setIsReviewOpen(false)} className="inline-flex size-11 items-center justify-center rounded-xl text-secondary hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-accent" aria-label="Close review"><X className="size-5" aria-hidden /></button></div><label className="mt-6 grid gap-2 text-sm font-medium text-foreground" htmlFor="draft-caption-edit">Tweak the line<textarea id="draft-caption-edit" value={editableCaption} onChange={(event) => setEditableCaption(event.target.value)} maxLength={220} rows={3} className="min-h-28 resize-y rounded-xl border border-border bg-background px-3 py-3 font-editorial text-xl font-medium leading-snug tracking-tight text-foreground outline-none transition-colors duration-200 focus:border-accent focus:ring-2 focus:ring-accent/20" /></label><p className="mt-3 text-sm text-secondary">Generated with {draft.generationModel}. This private draft is saved under My captions until you publish.</p>{message ? <p className="mt-3 text-sm font-medium text-secondary" role="status">{message}</p> : null}<div className="mt-7 flex flex-wrap justify-end gap-3"><button type="button" onClick={() => void retryCaption()} disabled={isWorking} className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-border px-4 text-sm font-medium text-foreground transition-colors hover:border-accent focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-60">{jobState === "generating" ? <LoaderCircle className="size-4 animate-spin motion-reduce:animate-none" aria-hidden /> : <RefreshCw className="size-4" aria-hidden />}Retry caption</button><button type="button" onClick={() => void saveDraftEdits()} disabled={isWorking || editableCaption.trim() === draft.caption || !editableCaption.trim()} className="inline-flex min-h-11 items-center rounded-xl border border-border px-4 text-sm font-medium text-foreground transition-colors hover:border-accent focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-60">Save to draft</button><button type="button" onClick={publishCaption} disabled={isWorking || editableCaption.trim() !== draft.caption} className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-primary px-4 text-sm font-medium text-background transition-transform hover:-translate-y-0.5 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-accent disabled:opacity-60">{isWorking ? <LoaderCircle className="size-4 animate-spin motion-reduce:animate-none" aria-hidden /> : <UploadCloud className="size-4" aria-hidden />}Publish to the feed</button></div></div>
             </motion.div>
           </motion.div>
         ) : null}

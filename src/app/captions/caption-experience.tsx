@@ -14,12 +14,15 @@ type CaptionExperienceProps = {
   drafts: CaptionDraft[];
 };
 
+type DraftResolution = { id: string; status: "deleted" | "published" } | null;
+
 function asCaptionDraft(draft: SavedDraft): CaptionDraft {
   return draft;
 }
 
 export function CaptionExperience({ captions, userId, initialVotes, initialTotals, drafts }: CaptionExperienceProps) {
   const [draftItems, setDraftItems] = useState(drafts);
+  const [externallyResolvedDraft, setExternallyResolvedDraft] = useState<DraftResolution>(null);
 
   function upsertDraft(draft: SavedDraft) {
     const nextDraft = asCaptionDraft(draft);
@@ -28,6 +31,11 @@ export function CaptionExperience({ captions, userId, initialVotes, initialTotal
 
   function removeDraft(draftId: string) {
     setDraftItems((current) => current.filter((draft) => draft.id !== draftId));
+  }
+
+  function resolveDraftFromList(draftId: string, status: "deleted" | "published") {
+    removeDraft(draftId);
+    setExternallyResolvedDraft({ id: draftId, status });
   }
 
   return (
@@ -39,13 +47,13 @@ export function CaptionExperience({ captions, userId, initialVotes, initialTotal
           initialVotes={initialVotes}
           initialTotals={initialTotals}
           drafts={draftItems}
-          onDraftDeleted={removeDraft}
+          onDraftResolved={resolveDraftFromList}
         />
       </section>
 
       <section id="make-a-caption" className="scroll-mt-28 border-t border-border py-14 sm:py-20" aria-labelledby="generation-heading">
         {userId ? (
-          <CaptionGenerator onDraftSaved={upsertDraft} onDraftUpdated={upsertDraft} onDraftDeleted={removeDraft} />
+          <CaptionGenerator onDraftSaved={upsertDraft} onDraftUpdated={upsertDraft} onDraftDeleted={removeDraft} externallyResolvedDraft={externallyResolvedDraft} />
         ) : (
           <div className="relative overflow-hidden rounded-[2rem] border border-border bg-muted/40 p-6 sm:flex sm:items-center sm:justify-between sm:gap-8 sm:p-8">
             <div aria-hidden className="absolute -bottom-20 -right-12 size-56 rounded-full bg-accent/10 blur-3xl" />

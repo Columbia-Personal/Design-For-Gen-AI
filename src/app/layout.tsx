@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Archivo, Outfit, Space_Grotesk } from "next/font/google";
+import { ScrollManager } from "@/components/scroll-manager";
 import "./globals.css";
 
 const archivo = Archivo({
@@ -26,6 +27,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html
       lang="en"
+      data-scroll-behavior="smooth"
       className={`${archivo.variable} ${spaceGrotesk.variable} ${outfit.variable} h-full antialiased`}
     >
       <body className="min-h-full bg-background text-foreground">
@@ -37,6 +39,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
           <div className="blob-b absolute top-1/3 -right-32 h-[28rem] w-[28rem] rounded-full bg-secondary/20 blur-3xl" />
           <div className="blob-c absolute bottom-0 left-1/4 h-[26rem] w-[26rem] rounded-full bg-accent/10 blur-3xl" />
         </div>
+        <ScrollManager />
         <div className="relative z-10 flex min-h-full flex-col">{children}</div>
       </body>
     </html>
