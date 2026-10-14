@@ -7,8 +7,8 @@ import {
   ArrowLeft,
   ArrowRight,
   ChevronDown,
-  CircleGauge,
   ListFilter,
+  Route,
   Sparkles,
 } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
@@ -16,6 +16,7 @@ import Image from "next/image";
 import { useMemo, useRef, useState } from "react";
 import { getSceneMedia, SCENE_MEDIA } from "@/lib/scene-media";
 import { RatingControls, type VoteTotal } from "./rating-controls";
+import type { DailyDetour } from "./caption-generator";
 
 gsap.registerPlugin(ScrollTrigger);
 
@@ -27,6 +28,8 @@ export type Caption = {
   generation_model: string | null;
   media_key: string | null;
   media_url: string | null;
+  media_alt: string | null;
+  challenge_id: number | null;
   created_at: string;
 };
 
@@ -35,15 +38,15 @@ type CaptionListProps = {
   userId: string | null;
   initialVotes: Record<number, -1 | 1>;
   initialTotals: Record<number, VoteTotal>;
+  dailyDetour: DailyDetour | null;
 };
 
-type SortMode = "fresh" | "loved" | "side-quest";
-type FilterMode = "all" | "made-here" | "starting-set" | "mine";
+type SortMode = "fresh" | "loved";
+type FilterMode = "all" | "made-here" | "starting-set" | "mine" | "daily-detour";
 
 const sortOptions: Array<{ id: SortMode; label: string; description: string }> = [
   { id: "fresh", label: "Fresh first", description: "What just landed" },
   { id: "loved", label: "Most loved", description: "The room is keeping these" },
-  { id: "side-quest", label: "Side quest", description: "A detour through the feed" },
 ];
 
 const filterOptions: Array<{ id: FilterMode; label: string }> = [
@@ -51,14 +54,11 @@ const filterOptions: Array<{ id: FilterMode; label: string }> = [
   { id: "made-here", label: "Made here" },
   { id: "starting-set", label: "Starting set" },
   { id: "mine", label: "My captions" },
+  { id: "daily-detour", label: "Daily Detour" },
 ];
 
 function captionScore(caption: Caption, totals: Record<number, VoteTotal>) {
   return totals[caption.id]?.score ?? 0;
-}
-
-function sideQuestRank(caption: Caption) {
-  return (caption.id * 37 + caption.text.length * 11) % 101;
 }
 
 function CaptionPrompt({ prompt }: { prompt: string }) {
@@ -102,6 +102,7 @@ export function CaptionList({
   userId,
   initialVotes,
   initialTotals,
+  dailyDetour,
 }: CaptionListProps) {
   const shouldReduceMotion = useReducedMotion();
   const scope = useRef<HTMLDivElement>(null);
@@ -131,6 +132,7 @@ export function CaptionList({
       if (filter === "made-here") return Boolean(caption.prompt);
       if (filter === "starting-set") return !caption.prompt;
       if (filter === "mine") return Boolean(userId && caption.author_id === userId);
+      if (filter === "daily-detour") return Boolean(dailyDetour && caption.challenge_id === dailyDetour.id);
       return true;
     });
 
@@ -139,12 +141,9 @@ export function CaptionList({
         return captionScore(b, voteTotals) - captionScore(a, voteTotals)
           || b.created_at.localeCompare(a.created_at);
       }
-      if (sort === "side-quest") {
-        return sideQuestRank(a) - sideQuestRank(b);
-      }
       return b.created_at.localeCompare(a.created_at);
     });
-  }, [captions, filter, sort, userId, voteTotals]);
+  }, [captions, dailyDetour, filter, sort, userId, voteTotals]);
 
   const visibleCaptions = filteredCaptions.slice(0, visibleCount);
   const activeSort = sortOptions.find((option) => option.id === sort) ?? sortOptions[0];
@@ -272,11 +271,11 @@ export function CaptionList({
           </div>
 
           <div className="flex min-h-44 flex-col justify-between rounded-[1.75rem] border border-border bg-muted/50 p-5 lg:col-span-4">
-            <CircleGauge className="size-5 text-accent" aria-hidden />
+            <Route className="size-5 text-accent" aria-hidden />
             <div>
-              <p className="font-editorial text-4xl font-medium tracking-tight text-primary">{totalVotes}</p>
-              <p className="mt-1 max-w-xs text-sm leading-relaxed text-secondary">
-                votes have shaped what rises in the feed.
+              <p className="text-sm font-medium text-foreground">Daily Detour</p>
+              <p className="mt-2 max-w-xs font-editorial text-xl leading-snug tracking-tight text-primary">
+                {dailyDetour?.prompt ?? `${totalVotes} votes have shaped what rises in the feed.`}
               </p>
             </div>
           </div>
@@ -330,7 +329,7 @@ export function CaptionList({
           <div className="mt-6 flex flex-wrap gap-2" aria-label="Caption filters">
             {filterOptions.map((option) => {
               const isActive = option.id === filter;
-              const unavailable = option.id === "mine" && !userId;
+              const unavailable = (option.id === "mine" && !userId) || (option.id === "daily-detour" && !dailyDetour);
               return (
                 <button
                   key={option.id}
@@ -365,31 +364,29 @@ export function CaptionList({
                       exit={shouldReduceMotion ? undefined : { opacity: 0, y: -10 }}
                       transition={{ duration: 0.24, ease: [0.16, 1, 0.3, 1] }}
                       style={{ zIndex: visibleCaptions.length - index }}
-                      className={`caption-card relative grid min-h-40 grid-cols-[auto_1fr] gap-4 overflow-hidden rounded-[1.75rem] border border-border bg-background p-5 shadow-sm sm:grid-cols-[auto_minmax(10rem,13rem)_minmax(0,1fr)] sm:p-7 ${index > 0 ? "lg:-mt-2" : ""}`}
+                      className={`caption-card relative overflow-hidden rounded-[1.75rem] border border-border bg-background shadow-sm ${index > 0 ? "lg:-mt-2" : ""}`}
                     >
-                      <span
-                        aria-hidden
-                        className="flex size-9 items-center justify-center rounded-full bg-primary font-mono text-xs font-medium text-background"
-                      >
-                        {String(position).padStart(2, "0")}
-                      </span>
-                      <div className="col-span-full sm:col-span-1 sm:col-start-2">
-                        <div className="group relative aspect-[4/3] overflow-hidden rounded-2xl border border-border bg-muted">
+                      <div className="group relative aspect-[4/3] overflow-hidden bg-muted">
+                        <span aria-hidden className="absolute left-4 top-4 z-10 flex size-9 items-center justify-center rounded-full bg-primary/90 font-mono text-xs font-medium text-background backdrop-blur">
+                          {String(position).padStart(2, "0")}
+                        </span>
+                        <div className="absolute inset-0">
                           <Image
                             src={imageUrl}
-                            alt={scene.alt}
+                            alt={caption.media_alt ?? scene.alt}
                             fill
-                            sizes="(min-width: 640px) 13rem, calc(100vw - 5rem)"
+                            sizes="(min-width: 1024px) 42rem, (min-width: 640px) 70vw, calc(100vw - 3rem)"
                             className="object-cover transition-transform duration-700 ease-out group-hover:scale-105 motion-reduce:transition-none"
                           />
-                          <div className="absolute inset-0 bg-gradient-to-t from-primary/85 via-primary/5 to-transparent" />
-                          <span className="absolute bottom-3 left-3 right-3 text-sm font-medium text-background">{scene.title}</span>
                         </div>
+                        <div className="absolute inset-0 bg-gradient-to-t from-primary/65 via-transparent to-transparent" />
+                        <span className="absolute bottom-4 left-5 right-5 text-sm font-medium text-background">{caption.media_key === "user-upload" ? "Member upload" : scene.title}</span>
                       </div>
-                      <div className="col-span-full sm:col-start-3">
+                      <div className="p-5 sm:p-7">
                         <p className="max-w-2xl font-editorial text-2xl leading-snug tracking-tight text-foreground sm:text-3xl">
                           {caption.text}
                         </p>
+                        {dailyDetour && caption.challenge_id === dailyDetour.id ? <p className="mt-3 inline-flex rounded-full bg-accent/10 px-3 py-1 text-xs font-medium text-accent">Daily Detour</p> : null}
                         {caption.prompt ? (
                           <CaptionPrompt prompt={caption.prompt} />
                         ) : (

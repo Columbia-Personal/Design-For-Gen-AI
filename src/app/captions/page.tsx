@@ -3,6 +3,7 @@ import { connection } from "next/server";
 import { ArrowLeft, ArrowDownRight, Sparkles } from "lucide-react";
 import { CaptionList, type Caption } from "./caption-list";
 import { CaptionGenerator } from "./caption-generator";
+import type { DailyDetour } from "./caption-generator";
 import type { VoteTotal } from "./rating-controls";
 import { AuthButton } from "@/components/auth-button";
 import { getSupabase } from "@/lib/supabase";
@@ -22,6 +23,8 @@ type VoteTotalRow = VoteTotal & {
   caption_id: number;
 };
 
+type DailyDetourRow = DailyDetour & { active_on: string };
+
 export default async function CaptionsPage() {
   await connection();
 
@@ -31,20 +34,27 @@ export default async function CaptionsPage() {
     data: { user },
   } = await sessionSupabase.auth.getUser();
 
-  const [captionsResult, totalsResult, votesResult] = await Promise.all([
+  const [captionsResult, totalsResult, votesResult, dailyDetourResult] = await Promise.all([
     publicSupabase
       .from("captions")
-      .select("id, text, prompt, author_id, generation_model, media_key, media_url, created_at")
+      .select("id, text, prompt, author_id, generation_model, media_key, media_url, media_alt, challenge_id, created_at")
       .order("created_at", { ascending: false }),
     publicSupabase.rpc("caption_vote_totals"),
     user
       ? sessionSupabase.from("caption_votes").select("caption_id, value")
       : Promise.resolve({ data: [] as VoteRow[], error: null }),
+    publicSupabase
+      .from("daily_detours")
+      .select("id, title, prompt, active_on")
+      .order("active_on", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
   ]);
 
   const captions = (captionsResult.data ?? []) as Caption[];
   const totals = (totalsResult.data ?? []) as VoteTotalRow[];
   const votes = (votesResult.data ?? []) as VoteRow[];
+  const dailyDetour = (dailyDetourResult.data ?? null) as DailyDetourRow | null;
   const initialTotals = Object.fromEntries(
     totals.map((total) => [
       total.caption_id,
@@ -116,13 +126,14 @@ export default async function CaptionsPage() {
               userId={user?.id ?? null}
               initialVotes={initialVotes}
               initialTotals={initialTotals}
+              dailyDetour={dailyDetour}
             />
           )}
         </section>
 
         <section id="make-a-caption" className="scroll-mt-28 border-t border-border py-14 sm:py-20" aria-labelledby="generation-heading">
           {user ? (
-            <CaptionGenerator />
+            <CaptionGenerator dailyDetour={dailyDetour} />
           ) : (
             <div className="relative overflow-hidden rounded-[2rem] border border-border bg-muted/40 p-6 sm:flex sm:items-center sm:justify-between sm:gap-8 sm:p-8">
               <div aria-hidden className="absolute -bottom-20 -right-12 size-56 rounded-full bg-accent/10 blur-3xl" />
@@ -131,7 +142,7 @@ export default async function CaptionsPage() {
                   Make a caption, then leave your mark on the feed.
                 </h2>
                 <p className="mt-3 max-w-xl text-base leading-relaxed text-secondary">
-                  Anyone can browse. Signing in lets you write a new prompt and rate the captions that make the cut.
+                  Anyone can browse. Sign in to upload a photo, make an AI caption, and rate the posts that make the cut.
                 </p>
               </div>
               <div className="relative mt-5 sm:mt-0">
@@ -145,7 +156,7 @@ export default async function CaptionsPage() {
       <footer className="border-t border-border px-6 py-7 sm:px-12">
         <div className="mx-auto flex w-full max-w-6xl flex-col gap-1 text-xs text-secondary sm:flex-row sm:items-center sm:justify-between">
           <span>Ritvik Sharma · Design for Generative AI</span>
-          <span>Week 4: generation, ratings, and RLS</span>
+          <span>Week 5: uploads, AI drafts, ratings, and RLS</span>
         </div>
       </footer>
     </div>

@@ -47,6 +47,18 @@ export function RatingControls({
       return;
     }
 
+    const previousVote = vote;
+    const previousTotals = totals;
+    const nextTotals = {
+      upvotes: totals.upvotes + (nextVote === 1 ? 1 : 0) - (previousVote === 1 ? 1 : 0),
+      downvotes: totals.downvotes + (nextVote === -1 ? 1 : 0) - (previousVote === -1 ? 1 : 0),
+      score: totals.score + nextVote - (previousVote ?? 0),
+    };
+
+    setVote(nextVote);
+    setTotals(nextTotals);
+    onVoteSaved?.(captionId, nextTotals);
+
     startTransition(async () => {
       setMessage(null);
       const supabase = createClient();
@@ -61,11 +73,13 @@ export function RatingControls({
       );
 
       if (error) {
+        setVote(previousVote);
+        setTotals(previousTotals);
+        onVoteSaved?.(captionId, previousTotals);
         setMessage("Your vote did not save. Try again.");
         return;
       }
 
-      setVote(nextVote);
       const { data } = await supabase.rpc("caption_vote_totals");
       const refreshed = (data as VoteTotalRow[] | null)?.find(
         (total) => total.caption_id === captionId,
