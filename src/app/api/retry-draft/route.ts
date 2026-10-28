@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { startGenerationLog, finishGenerationLog, captionGenerationEnabled } from "@/lib/generation-log";
 
 const GEMINI_MODEL = "gemini-3.5-flash-lite";
 const MAX_CAPTION_LENGTH = 220;
@@ -26,9 +27,12 @@ export async function POST(request: Request) {
     .maybeSingle();
   if (draftError || !draft) return NextResponse.json({ error: "This draft is no longer available." }, { status: 404 });
 
+  if (!await captionGenerationEnabled(supabase)) return NextResponse.json({ error: "Caption generation is temporarily unavailable." }, { status: 503 });
+
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) return NextResponse.json({ error: "Caption generation is not configured yet. Add GEMINI_API_KEY and try again." }, { status: 503 });
 
+  let logId: string | null = null;
   try {
     let inlineData: { mimeType: string; data: string } | null = null;
     if (draft.media_path) {
@@ -53,6 +57,15 @@ export async function POST(request: Request) {
     const mediaInstruction = draft.media_source === "starter-gif"
       ? `The post uses this reaction GIF: ${draft.media_alt} Use that setup in the caption.`
       : "Use specific visual details from the image.";
+    const modelPrompt = [
+      "Look at this image and write exactly one new original caption for a student-run New York humor feed.",
+      "Keep it under 180 characters. Make it dry, specific, and casually online.",
+      "Return only the caption: no hashtags, quotation marks, setup, or explanation.",
+      `The prior caption was: ${draft.text}. Do not repeat or lightly reword it.`,
+      mediaInstruction,
+      sourceContext,
+    ].filter(Boolean).join("\n");
+    logId = await startGenerationLog(supabase, user.id, GEMINI_MODEL, modelPrompt);
     const response = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`,
       {
@@ -62,14 +75,7 @@ export async function POST(request: Request) {
           contents: [{
             role: "user",
             parts: [
-              { text: [
-                "Look at this image and write exactly one new original caption for a student-run New York humor feed.",
-                "Keep it under 180 characters. Make it dry, specific, and casually online.",
-                "Return only the caption: no hashtags, quotation marks, setup, or explanation.",
-                `The prior caption was: ${draft.text}. Do not repeat or lightly reword it.`,
-                mediaInstruction,
-                sourceContext,
-              ].filter(Boolean).join("\n") },
+              { text: modelPrompt },
               ...(inlineData ? [{ inlineData }] : []),
             ],
           }],
@@ -77,11 +83,12 @@ export async function POST(request: Request) {
         }),
       },
     );
-    if (!response.ok) return NextResponse.json({ error: "The caption model is taking a break. Try again in a moment." }, { status: 502 });
+    if (!response.ok) { await finishGenerationLog(supabase, logId, null, `Provider returned HTTP ${response.status}`); return NextResponse.json({ error: "The caption model is taking a break. Try again in a moment." }, { status: 502 }); }
 
     const result = (await response.json()) as GeminiResponse;
     const caption = cleanCaption(result.candidates?.[0]?.content?.parts?.[0]?.text ?? "");
-    if (!caption) return NextResponse.json({ error: "The model did not return a caption. Try again." }, { status: 502 });
+    if (!caption) { await finishGenerationLog(supabase, logId, null, "Provider returned an empty caption."); return NextResponse.json({ error: "The model did not return a caption. Try again." }, { status: 502 }); }
+    await finishGenerationLog(supabase, logId, caption, null);
 
     const { data: updatedDraft, error: updateError } = await supabase
       .from("caption_drafts")
@@ -99,6 +106,7 @@ export async function POST(request: Request) {
       generationModel: GEMINI_MODEL,
     });
   } catch {
+    await finishGenerationLog(supabase, logId, null, "The generation request did not finish.");
     return NextResponse.json({ error: "The request did not finish. Check your connection and try again." }, { status: 500 });
   }
 }
