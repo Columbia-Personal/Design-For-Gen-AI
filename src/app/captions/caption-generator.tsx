@@ -104,22 +104,6 @@ export function CaptionGenerator({ onDraftSaved, onDraftUpdated, onDraftDeleted,
     setMessage(null);
   }
 
-  async function discardDraft() {
-    const draftId = draft?.id;
-    if (!draftId) return resetDraft();
-    const response = await fetch("/api/delete-draft", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ draftId }),
-    });
-    if (!response.ok) {
-      setMessage("Your draft could not be discarded. Try again.");
-      return;
-    }
-    onDraftDeleted(draftId);
-    resetDraft();
-  }
-
   function generateCaption(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const starterGif = getStarterGif(starterGifId);
@@ -368,7 +352,7 @@ export function CaptionGenerator({ onDraftSaved, onDraftUpdated, onDraftDeleted,
                 <p className="mt-2 text-sm font-medium text-foreground">{displayJobState === "generating" ? "Your caption is being generated" : displayJobState === "saving" ? "Saving your private draft" : displayJobState === "publishing" ? "Publishing your post" : displayJobState === "deleted" ? "Draft deleted" : "Caption ready to review"}</p>
                 <p className="mt-1 text-xs leading-relaxed text-secondary">{displayJobState === "ready" ? "Saved under My captions. Nothing is public until you publish it." : displayJobState === "deleted" ? `${deletedDraftMessage} You can dismiss this notice.` : "You can keep browsing while this finishes."}</p>
               </div>
-              {displayJobState === "ready" ? <button type="button" onClick={() => void discardDraft()} className="inline-flex size-9 shrink-0 items-center justify-center rounded-lg text-secondary hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent" aria-label="Discard draft"><X className="size-4" aria-hidden /></button> : null}
+              {displayJobState === "ready" ? <button type="button" onClick={resetDraft} className="inline-flex size-9 shrink-0 items-center justify-center rounded-lg text-secondary hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent" aria-label="Dismiss caption notice"><X className="size-4" aria-hidden /></button> : null}
               {displayJobState === "deleted" ? <button type="button" onClick={resetDraft} className="inline-flex size-9 shrink-0 items-center justify-center rounded-lg text-secondary hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent" aria-label="Dismiss deleted draft notice"><X className="size-4" aria-hidden /></button> : null}
             </div>
             {displayJobState === "ready" ? <div className="border-t border-border p-3"><button type="button" onClick={() => setIsReviewOpen(true)} className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 text-sm font-medium text-background transition-transform hover:-translate-y-0.5 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-accent"><UploadCloud className="size-4" aria-hidden />Review caption</button></div> : null}

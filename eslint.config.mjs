@@ -14,6 +14,9 @@ const eslintConfig = defineConfig([
     "next-env.d.ts",
     "week6-admin/**",
     "semester-project-exploration/**",
+    "funnybone/**",
+    "prompt-chain-studio/**",
+    "design-system/**",
   ]),
 ]);
 
